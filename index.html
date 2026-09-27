@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ludo — Pass &amp; Play</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🎲</span>
+    <h1>Ludo</h1>
+    <span class="sub">Pass &amp; Play</span>
+  </div>
+  <div class="actions">
+    <button id="soundBtn" class="icon-btn" title="Toggle sound">🔊</button>
+    <button id="rulesBtn" class="ghost-btn">Rules</button>
+    <button id="newGameBtn" class="ghost-btn">New Game</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="board-area">
+    <div id="board" class="board">
+      <div id="cells" class="cells"></div>
+      <div id="deco" class="deco"></div>
+      <div id="tokens" class="tokens"></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div id="turnCard" class="turn-card">
+      <div class="turn-label">Current turn</div>
+      <div class="turn-line">
+        <span id="turnDot" class="turn-dot"></span>
+        <span id="turnName" class="turn-name">—</span>
+      </div>
+    </div>
+
+    <div id="playerList" class="player-list"></div>
+
+    <div class="dice-block">
+      <div id="dice" class="dice" role="button" tabindex="0" aria-label="Roll dice">
+        <div class="pips"></div>
+      </div>
+      <button id="rollBtn" class="roll-btn">Roll Dice</button>
+      <div class="hint">Tap the dice or press <b>Space</b></div>
+    </div>
+
+    <div id="message" class="message">Welcome!</div>
+  </aside>
+</main>
+
+<!-- ===== Start screen ===== -->
+<div id="startScreen" class="overlay">
+  <div class="modal">
+    <h2>Start a game</h2>
+    <div class="seg" id="countSeg">
+      <button data-n="2" class="active">2 Players</button>
+      <button data-n="3">3 Players</button>
+      <button data-n="4">4 Players</button>
+    </div>
+    <div id="nameFields" class="name-fields"></div>
+    <p class="tip">Each player shares one device and takes turns.</p>
+    <button id="startBtn" class="primary-btn">Start Game</button>
+  </div>
+</div>
+
+<!-- ===== Winner ===== -->
+<div id="winScreen" class="overlay hidden">
+  <div class="modal">
+    <div class="trophy">🏆</div>
+    <h2 id="winTitle">Winner!</h2>
+    <p id="winSub">brought all 4 tokens home first.</p>
+    <button id="againBtn" class="primary-btn">Play Again</button>
+  </div>
+</div>
+
+<!-- ===== Rules ===== -->
+<div id="rulesScreen" class="overlay hidden">
+  <div class="modal rules">
+    <h2>How to play</h2>
+    <ul>
+      <li>Roll a <b>6</b> to bring a token out of the base onto its start square.</li>
+      <li>Move your token <b>clockwise</b> around the board by the number you rolled.</li>
+      <li>Land on an opponent's token to send it back to its base — but not on <b>★ safe</b> squares.</li>
+      <li>Rolling a <b>6</b> gives you another roll. Three 6s in a row loses your turn.</li>
+      <li>Enter the coloured home column, then reach the centre with an <b>exact</b> roll.</li>
+      <li>Two of your own tokens can share a square (they stack).</li>
+      <li>First player to get all <b>4 tokens home</b> wins! 🏆</li>
+    </ul>
+    <button id="closeRules" class="primary-btn">Got it</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
