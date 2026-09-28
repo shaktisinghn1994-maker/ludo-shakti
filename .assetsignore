@@ -1,0 +1,10 @@
+.git
+.gitignore
+node_modules
+test.js
+server.js
+worker.js
+room.js
+wrangler.jsonc
+.assetsignore
+*.log
