@@ -4,7 +4,7 @@
 
 import { Room } from './room.js';
 
-const BUILD = 'online-1';
+const BUILD = 'online-2';
 const CODE_RE = /^[A-Z0-9]{4,8}$/;
 
 export { Room };

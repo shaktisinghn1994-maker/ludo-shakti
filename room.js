@@ -49,17 +49,29 @@ export class Room {
     try { return ws.deserializeAttachment(); } catch (e) { return null; }
   }
 
+  /* small breadcrumb trail, readable through GET /room/<code>/info — there are no
+     live logs on the free plan, so this is how a room explains itself */
+  note (x) {
+    try {
+      this.state.storage.get('dbg').then(raw => {
+        const arr = raw ? JSON.parse(raw) : [];
+        arr.push(new Date().toISOString().slice(11, 23) + ' ' + x);
+        return this.state.storage.put('dbg', JSON.stringify(arr.slice(-24)));
+      }).catch(() => {});
+    } catch (e) { /* never break the room for a note */ }
+  }
+
   send (ws, o) {
-    /* no readyState check here: on the server side of a hibernated socket it is
+    /* no readyState check here: on the server side of a just-accepted socket it is
        not always 1 yet, and a silent guard would drop every reply. */
-    try { ws.send(JSON.stringify(o)); } catch (e) { /* socket already gone */ }
+    try { ws.send(JSON.stringify(o)); } catch (e) { this.note('send-threw ' + e.message); }
   }
 
   broadcast (o, except) {
     const s = JSON.stringify(o);
     this.all().forEach(ws => {
       if (ws === except) return;
-      try { ws.send(s); } catch (e) { /* socket already gone */ }
+      try { ws.send(s); } catch (e) { this.note('bcast-threw ' + e.message); }
     });
   }
 
@@ -81,13 +93,16 @@ export class Room {
     const meta = await this.load();
 
     if (parts[2] === 'info') {
+      let dbg = null;
+      try { dbg = JSON.parse(await this.state.storage.get('dbg') || 'null'); } catch (e) {}
       return json({
         ok: true,
         code: parts[1] || '',
         open: !!meta.owner,
         count: meta.count,
         started: !!meta.started,
-        seats: (meta.seats || []).length
+        seats: (meta.seats || []).length,
+        dbg: dbg
       });
     }
 
@@ -95,33 +110,45 @@ export class Room {
     if (up !== 'websocket') return json({ error: 'WebSocket only' }, 400);
 
     const pair = new WebSocketPair();
-    try { this.state.acceptWebSocket(pair[1]); } catch (e) {
+    const client = pair[0];
+    const server = pair[1];
+    try {
+      this.state.acceptWebSocket(server);
+      this.note('accepted (keys=' + Object.keys(pair).join(',') + ')');
+    } catch (e) {
+      this.note('accept-FAILED ' + e.message);
       return new Response('Room unavailable', { status: 500 });
     }
-    return new Response(null, { status: 101, webSocket: pair[0] });
+    return new Response(null, { status: 101, webSocket: client });
   }
 
   /* ---------- protocol ---------- */
   async webSocketMessage (ws, raw) {
     let m = null;
-    try { m = JSON.parse(raw); } catch (e) { return; }
-    if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
+    try { m = JSON.parse(raw); } catch (e) { this.note('bad-json ' + typeof raw); return; }
+    if (!m || typeof m !== 'object' || typeof m.t !== 'string') { this.note('bad-msg'); return; }
+    this.note('recv ' + m.t + ' sockets=' + this.all().length);
 
     const meta = await this.load();
-    if (m.t === 'hi') return this.onHi(ws, meta, m);
+    try {
+      if (m.t === 'hi') { await this.onHi(ws, meta, m); this.note('hi-done'); return; }
 
-    const a = this.att(ws);
-    if (!a) { this.send(ws, { t: 'err', text: 'Session not ready.' }); return; }
+      const a = this.att(ws);
+      if (!a) { this.note('no-attachment'); this.send(ws, { t: 'err', text: 'Session not ready.' }); return; }
 
-    switch (m.t) {
-      case 'start':  return this.onStart(ws, meta, a);
-      case 's':      return this.onState(ws, meta, a, m);
-      case 'e':      return this.onEvent(ws, meta, a, m);
-      case 'a':      return this.onAction(ws, meta, a, m);
-      case 'chat':   return this.onChat(ws, meta, a, m);
-      case 'rename': return this.onRename(ws, meta, a, m);
-      case 'leave':  try { ws.close(1000, 'left'); } catch (e) {} return;
-      default:       this.send(ws, { t: 'err', text: 'Unknown message.' });
+      switch (m.t) {
+        case 'start':  return await this.onStart(ws, meta, a);
+        case 's':      return this.onState(ws, meta, a, m);
+        case 'e':      return this.onEvent(ws, meta, a, m);
+        case 'a':      return await this.onAction(ws, meta, a, m);
+        case 'chat':   return await this.onChat(ws, meta, a, m);
+        case 'rename': return this.onRename(ws, meta, a, m);
+        case 'leave':  try { ws.close(1000, 'left'); } catch (e) {} return;
+        default:       this.send(ws, { t: 'err', text: 'Unknown message.' });
+      }
+    } catch (e) {
+      this.note('threw@' + (e && e.message));
+      try { this.send(ws, { t: 'err', text: 'Room error.' }); } catch (e2) {}
     }
   }
 
@@ -272,10 +299,12 @@ export class Room {
 
   /* ---------- lifecycle ---------- */
   async webSocketClose (ws, code) {
+    this.note('close code=' + code + ' sockets=' + this.all().length);
     return this.drop(ws);
   }
 
   async webSocketError (ws) {
+    this.note('socket-error');
     return this.drop(ws);
   }
 
