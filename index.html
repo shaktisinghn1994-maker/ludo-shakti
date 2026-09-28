@@ -25,6 +25,7 @@
   </div>
   <div class="actions">
     <button id="soundBtn" class="icon-btn" title="Toggle sound">🔊</button>
+    <button id="chatBtn" class="icon-btn" title="Chat" aria-haspopup="true" aria-expanded="false">💬</button>
     <button id="rulesBtn" class="ghost-btn">Rules</button>
     <button id="settingsBtn" class="icon-btn" title="Settings" aria-haspopup="true" aria-expanded="false">⚙️</button>
     <button id="newGameBtn" class="ghost-btn">New Game</button>
@@ -93,6 +94,7 @@
 <!-- ===== Start screen ===== -->
 <div id="startScreen" class="overlay">
   <div class="modal">
+    <button id="closeStart" class="modal-x hidden" aria-label="Close">✕</button>
     <h2>Start a game</h2>
     <div class="seg" id="countSeg">
       <button data-n="2" class="active">2 Players</button>
@@ -101,7 +103,10 @@
     </div>
     <div id="nameFields" class="name-fields"></div>
     <p class="tip">Each player shares one device and takes turns.</p>
-    <button id="startBtn" class="primary-btn">Start Game</button>
+    <div class="modal-actions">
+      <button id="startBtn" class="primary-btn">Start Game</button>
+      <button id="resumeBtn" class="ghost-btn hidden">← Resume game</button>
+    </div>
     <div class="sig">Designed &amp; built by <b>Shakti Singh</b></div>
   </div>
 </div>
@@ -132,6 +137,34 @@
     <button id="closeRules" class="primary-btn">Got it</button>
   </div>
 </div>
+
+<!-- ===== Chat (text + emoji + stickers) ===== -->
+<aside id="chatPanel" class="chat-panel hidden" aria-label="Chat">
+  <header class="chat-head">
+    <span class="chat-title">💬 <b>Chat</b></span>
+    <span class="chat-as">as <span class="chat-dot" id="chatDot"></span><b id="chatAs">Red</b></span>
+    <button id="chatClear" class="chat-mini" title="Clear chat">🗑</button>
+    <button id="chatClose" class="chat-mini" aria-label="Close chat">✕</button>
+  </header>
+
+  <div id="chatLog" class="chat-log">
+    <div id="chatEmpty" class="chat-empty"><span>💬</span>Say hi 👋 — messages stay on this device.</div>
+  </div>
+
+  <div id="chatTray" class="chat-tray hidden">
+    <div class="chat-tabs">
+      <button data-tab="emoji" class="active">Emoji</button>
+      <button data-tab="sticker">Stickers</button>
+    </div>
+    <div id="chatGrid" class="chat-grid"></div>
+  </div>
+
+  <form id="chatForm" class="chat-input" autocomplete="off">
+    <button type="button" id="chatEmoji" class="chat-btn" title="Emoji">😀</button>
+    <input id="chatText" type="text" maxlength="140" placeholder="Type a message…" aria-label="Message" />
+    <button type="submit" id="chatSend" class="chat-btn chat-go" title="Send">➤</button>
+  </form>
+</aside>
 
 <canvas id="fx" class="fx-layer" aria-hidden="true"></canvas>
 

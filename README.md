@@ -26,9 +26,15 @@ node server.js        # then visit http://localhost:8787
   - Glass HUD: avatar player cards with SVG progress rings, turn card, glowing dice widget
   - Motion: 3D dice tumble + landing bounce, eased step-by-step movement, capture poof + fly-back, confetti on home/win
   - Light & dark themes, ambient animated background, Fredoka/Nunito typography, SVG favicon
+- **Chat 💬** — a floating chat sheet (bottom sheet on phones) with
+  - free-text messages tagged with the sender's colour, timestamped bubbles, system lines for captures / home runs / wins
+  - an **emoji picker** (tap to insert) and a **sticker tray** (tap to send, animated like a GIF) — all built in, no API key and no network calls
+  - history persisted in `localStorage`, 🗑 to clear; every message flows through one `pushChat()` entry point, so the same renderer becomes the room chat when online multiplayer lands
+- **New Game never eats your match** — opening *New Game* mid-game **pauses** it: the modal offers **← Resume game**, a ✕, **Esc**, or a tap outside the card to jump straight back. Any half-walked token is settled (its capture/home effects applied) before the pause, so the board never deadlocks
+- **Sounds** — a synthesised cartoon *"ha-ha-ha"* laugh plays the moment you capture an opponent's token (Web Audio, no audio files), alongside dice/capture/home/win cues — all mutable
 - **Settings (gear icon)** — light/dark theme, sound effects, optional turn timer (auto-roll, default off); persisted in `localStorage`
-- **Feel** — haptic micro-interactions on mobile, press ripples, ≥44px touch targets, phones play without horizontal scroll
-- **Polish** — sound effects (mutable), fully responsive layout
+- **Feel** — haptic micro-interactions on mobile (armed only by a real user gesture), press ripples, ≥44px touch targets, phones play without horizontal scroll
+- **Polish** — fully responsive layout
 
 ## Project structure
 

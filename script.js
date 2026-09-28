@@ -122,6 +122,50 @@ const soundCapture = () => { tone(240, .16, 'sawtooth', .06); tone(150, .22, 'sa
 const soundHome    = () => { tone(523, .09, 'triangle', .06); tone(659, .09, 'triangle', .06, .09); tone(784, .14, 'triangle', .06, .18); };
 const soundWin     = () => { [523,659,784,1047,784,1047].forEach((f,i)=>tone(f, .18, 'triangle', .07, i*.13)); };
 
+/* Cartoon "ha-ha-ha" laugh for a capture — synthesised on the fly, so there is
+   still no audio file in the project. Every syllable is a sawtooth pushed
+   through a formant band-pass with a steep pitch drop; a detuned square adds
+   body, and the phrase descends so it reads as a voice, not a beep. */
+function soundLaugh (delay) {
+  if (!soundOn) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0base = actx.currentTime + (delay || 0);
+    const syll = [1.00, 0.93, 0.85, 0.76, 0.65];   // each "ha" a touch lower
+    syll.forEach((mul, i) => {
+      const t0 = t0base + i * 0.135;
+      const dur = 0.17;
+      const top = 330 * mul;                        // ~330 Hz → ~215 Hz
+      const osc = actx.createOscillator();
+      const sub = actx.createOscillator();
+      const flt = actx.createBiquadFilter();
+      const g   = actx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(top * 1.3, t0);
+      osc.frequency.exponentialRampToValueAtTime(top * 0.7, t0 + dur);
+      sub.type = 'square';
+      sub.frequency.setValueAtTime(top * 0.65, t0);
+      sub.frequency.exponentialRampToValueAtTime(top * 0.36, t0 + dur);
+
+      flt.type = 'bandpass';
+      flt.frequency.value = 780 + 160 * (1 - mul);   // formant ≈ 780–940 Hz
+      flt.Q.value = 3.4;
+
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.11, t0 + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+      osc.connect(flt);
+      sub.connect(flt);
+      flt.connect(g);
+      g.connect(actx.destination);
+      osc.start(t0); osc.stop(t0 + dur + 0.05);
+      sub.start(t0); sub.stop(t0 + dur + 0.05);
+    });
+  } catch (e) { /* audio not available */ }
+}
+
 /* Haptic micro-feedback — follows the sound toggle, and quietly does nothing
    on devices/browsers that do not expose the Vibration API. */
 /* Haptic micro-feedback — follows the sound toggle, and quietly does nothing
@@ -130,7 +174,9 @@ const soundWin     = () => { [523,659,784,1047,784,1047].forEach((f,i)=>tone(f, 
    first pointer/key interaction and stay silent until then. */
 let hapticsArmed = false;
 if (typeof document !== 'undefined' && document.addEventListener) {
-  const arm = () => { hapticsArmed = true; };
+  /* only *real* interaction counts: synthetic events (tests, automations) must
+     not arm the vibration API, or Chrome logs a blocked-call warning */
+  const arm = e => { if (!e || e.isTrusted !== false) hapticsArmed = true; };
   document.addEventListener('pointerdown', arm, true);
   document.addEventListener('keydown', arm, true);
 }
@@ -461,6 +507,7 @@ function updateUI () {
   });
 
   resetTurnTimer();
+  if (typeof chatSyncSender === 'function') chatSyncSender();
 }
 
 /* ---------- Rules engine ---------- */
@@ -477,6 +524,7 @@ function legalMoves (p, v) {
 
 /* ---------- Turn flow ---------- */
 function rollDice () {
+  if (paused) return;
   if (game.phase !== 'roll' || !game.active.length) return;
   game.phase = 'rolling';
   updateUI();
@@ -528,6 +576,7 @@ function handleRoll (v) {
     game.phase = 'wait';
     msg(nameOf(p) + ' rolled ' + v + '.');
     updateUI();
+    game.queued = moves[0];                 // remembered so a pause can resume it
     later(() => performMove(moves[0]), 550);
     return;
   }
@@ -543,6 +592,10 @@ function performMove (m) {
   game.phase = 'moving';
   game.movable = [];
   game.pending = m.t;
+  game.queued = null;
+  game.resolved = false;
+  const from = game.tokens[p][m.t];
+  game.currentMove = { p, t: m.t, steps: m.steps, to: (from === -1 ? 0 : from + m.steps) };
   updateUI();
 
   // coming out of the base: one hop onto the start square
@@ -571,6 +624,9 @@ function performMove (m) {
 function resolve () {
   const p = cur();
   const t = game.pending;
+  if (game.resolved) return;                // never resolve the same step twice
+  game.resolved = true;
+  game.currentMove = null;
   const rel = game.tokens[p][t];
   let text = null;
 
@@ -596,8 +652,10 @@ function resolve () {
         renderTokens();
         knocked.forEach(b => captureFX(b.q, b.k, b));
         soundCapture();
+        soundLaugh(.2);                       // the taunt that follows the thud
         buzz([14, 45, 14]);
         text = nameOf(p) + ' captured ' + nameOf(hit[0]) + "'s token!";
+        chatSystem(text);
       }
     }
   }
@@ -608,6 +666,7 @@ function resolve () {
     const home = cellXY(p, HOME, t);
     if (home) fxBurst(home.x, home.y, DEF[p].color, 34);
     text = nameOf(p) + ' got a token home!';
+    chatSystem(text + ' \uD83C\uDF89');
   }
 
   if (game.tokens[p].every(x => x === HOME)) { win(p); return; }
@@ -651,6 +710,7 @@ function win (p) {
   fxRain(180);
   document.getElementById('winTitle').textContent = nameOf(p) + ' wins!';
   winScreen.classList.remove('hidden');
+  chatSystem(nameOf(p) + ' wins the game! \uD83C\uDFC6');
 }
 
 /* ---------- Start / reset ---------- */
@@ -674,6 +734,7 @@ function buildNameFields (n) {
 
 function startGame () {
   clearTimers();
+  paused = null;
   game.active = BY_COUNT[chosenCount].slice();
   game.names = {};
   nameFields.querySelectorAll('input').forEach(inp => {
@@ -688,6 +749,9 @@ function startGame () {
   game.sixes = 0;
   game.movable = [];
   game.pending = null;
+  game.queued = null;
+  game.currentMove = null;
+  game.resolved = false;
 
   buildTokens();
   buildCards();
@@ -696,15 +760,83 @@ function startGame () {
   updateUI();
   msg(nameOf(cur()) + "'s turn \u2014 roll the dice.");
   startScreen.classList.add('hidden');
+  syncStartChrome();
+  chatSystem('New game \u2014 ' + game.active.map(p => nameOf(p)).join(' vs '));
+}
+
+/* ---------- Pause / resume (New Game in the middle of a match) ----------
+   The start screen used to be a one-way door: opening it killed every pending
+   timer, so there was no way back into a running match. Now we first settle
+   anything in flight (a half-walked token jumps to its square and its capture/
+   home effects are applied immediately), then snapshot what is left over. */
+let paused = null;
+
+function settleBeforePause () {
+  if (game.phase === 'rolling') {
+    // the tumble never landed — put the dice back to "roll me"
+    game.phase = 'roll';
+    showDice(null);
+    return;
+  }
+  if (game.phase !== 'moving') return;
+
+  if (stepIv) { clearInterval(stepIv); stepIv = null; }
+  if (!game.resolved) {
+    const cm = game.currentMove;
+    if (cm) { game.tokens[cm.p][cm.t] = cm.to; renderTokens(); }
+    game.currentMove = null;
+    game.pending = cm ? cm.t : game.pending;
+    game.phase = 'wait';
+    resolve();                       // capture / home / win happen right now
+  }
+  if (game.phase === 'moving') game.phase = 'wait';
 }
 
 function openStartScreen () {
+  const live = game.active.length > 0 && game.phase !== 'idle' && game.phase !== 'over';
+  paused = null;
+  if (live) {
+    settleBeforePause();
+    if (game.phase !== 'over') {
+      paused = {
+        phase: game.phase,
+        queued: game.queued || null,
+        oweNextTurn: game.phase === 'wait' && !game.queued,
+        text: (msgEl && msgEl.textContent) || ''
+      };
+    }
+  }
   clearTimers();
   clearTurnTimer();
-  game.phase = 'idle';
+  if (!paused) game.phase = 'idle';
   winScreen.classList.add('hidden');
   rulesScreen.classList.add('hidden');
   startScreen.classList.remove('hidden');
+  syncStartChrome();
+}
+
+function syncStartChrome () {
+  const show = !!paused;
+  const r = document.getElementById('resumeBtn');
+  const x = document.getElementById('closeStart');
+  if (r) r.classList.toggle('hidden', !show);
+  if (x) x.classList.toggle('hidden', !show);
+}
+
+function resumeGame () {
+  const st = paused;
+  paused = null;
+  startScreen.classList.add('hidden');
+  syncStartChrome();
+  if (!st) return;
+
+  game.phase = st.phase;
+  renderTokens();
+  showDice(game.dice == null ? null : game.dice);
+  if (st.oweNextTurn) later(nextTurn, 800);
+  else if (st.queued) later(() => performMove(st.queued), 320);
+  updateUI();
+  msg(st.text || (nameOf(cur()) + "'s turn \u2014 roll the dice."));
 }
 
 /* ---------- Wiring ---------- */
@@ -714,8 +846,24 @@ diceEl.addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); rollDice(); }
 });
 
+function isTyping (el) {
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (chatPanel && !chatPanel.classList.contains('hidden')) { closeChat(); return; }
+    if (settingsPop && !settingsPop.classList.contains('hidden')) {
+      settingsPop.classList.add('hidden');
+      settingsBtn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    if (!rulesScreen.classList.contains('hidden')) { rulesScreen.classList.add('hidden'); return; }
+    if (paused) { resumeGame(); return; }
+    return;
+  }
   if (e.code !== 'Space') return;
+  if (isTyping(e.target)) return;
   if (!startScreen.classList.contains('hidden')) return;
   if (!winScreen.classList.contains('hidden')) return;
   if (!rulesScreen.classList.contains('hidden')) return;
@@ -734,6 +882,13 @@ countSeg.addEventListener('click', e => {
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('againBtn').addEventListener('click', openStartScreen);
 document.getElementById('newGameBtn').addEventListener('click', openStartScreen);
+
+/* back door out of the start screen while a match is still running */
+document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+document.getElementById('closeStart').addEventListener('click', () => { if (paused) resumeGame(); });
+startScreen.addEventListener('click', e => {
+  if (paused && e.target === startScreen) resumeGame();
+});
 document.getElementById('rulesBtn').addEventListener('click', () => rulesScreen.classList.remove('hidden'));
 document.getElementById('closeRules').addEventListener('click', () => rulesScreen.classList.add('hidden'));
 
@@ -1030,6 +1185,237 @@ function captureFX (q, k, from) {
   });
   setTimeout(() => { if (clone.parentNode) clone.parentNode.removeChild(clone); }, 700);
 }
+
+/* ---------- Chat: text · emoji · stickers ----------
+   One shared room per game for now (pass & play on one device): whoever's
+   turn it is, is holding the device. Everything goes through pushChat(), so
+   when multiplayer lands this same renderer becomes the room chat — only the
+   transport (localStorage → WebSocket) changes. */
+const chatPanel = document.getElementById('chatPanel');
+const chatLog   = document.getElementById('chatLog');
+const chatForm  = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatText');
+const chatTray  = document.getElementById('chatTray');
+const chatGrid  = document.getElementById('chatGrid');
+const chatBtnEl = document.getElementById('chatBtn');
+
+const EMOJIS = [
+  '😂', '🤣', '😅', '😆', '😉', '😍', '😎', '🤓', '🥳', '😱', '😴', '😡', '🤔', '🤗',
+  '😇', '😈', '👻', '💀', '🤡', '🥶', '🤭', '😬', '🙈', '🙉', '🙈',
+  '👍', '👎', '👏', '🙏', '💪', '🤝', '🤞', '✌️', '👌', '👋', '🫡', '🫰',
+  '🔥', '💯', '🎉', '🎊', '✨', '⭐', '🏆', '🥇', '🎲', '🎯', '🚀', '⚡',
+  '❤️', '💔', '💛', '💚', '💙', '💜', '🌈', '🍕', '☕', '🍻', '🐢', '💤'
+];
+
+const STICKERS = [
+  { art: '😂',                 label: 'LOL' },
+  { art: '🤣🤣🤣',             label: 'Cannot stop laughing' },
+  { art: '😈',                 label: 'Evil laugh' },
+  { art: '🎉🥳',               label: 'Party!' },
+  { art: '🔥',                 label: 'On fire' },
+  { art: '💯',                 label: 'Perfect' },
+  { art: '👏👏👏',             label: 'Bravo' },
+  { art: '😱',                 label: 'No way!' },
+  { art: '🏆',                 label: 'Winner!' },
+  { art: '🎲',                 label: 'Roll it!' },
+  { art: '😴',                 label: 'Boring...' },
+  { art: '💪',                 label: 'You got this' },
+  { art: '💔',                 label: 'Ouch' },
+  { art: '🤗',                 label: 'Group hug' },
+  { art: '🤞',                 label: 'So lucky' },
+  { art: '🗣️',                 label: 'Talk to me' }
+];
+
+let chatMsgs = (() => {
+  try {
+    const v = JSON.parse(window.localStorage.getItem('ludo.chat') || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+})();
+let chatSeq = chatMsgs.reduce((m, x) => Math.max(m, (x && x.id) || 0), 0);
+
+function saveChat () {
+  try { window.localStorage.setItem('ludo.chat', JSON.stringify(chatMsgs.slice(-80))); }
+  catch (e) { /* private mode / tests */ }
+}
+
+function chatSender () { return game.active.length ? cur() : 0; }
+
+function chatSyncSender () {
+  const p = chatSender();
+  const dot = document.getElementById('chatDot');
+  const as  = document.getElementById('chatAs');
+  if (dot) dot.style.background = DEF[p].color;
+  if (as)  as.textContent = nameOf(p);
+}
+
+function chatStamp (t) {
+  const d = new Date(t || Date.now());
+  return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function renderChatItem (m) {
+  if (!chatLog || !m) return;
+  const empty = document.getElementById('chatEmpty');
+  if (empty) empty.classList.add('hidden');
+  const el = document.createElement('div');
+  if (m.sys) {
+    el.className = 'chat-sys';
+    el.textContent = m.text;
+  } else {
+    const mine = m.p === (game.active.length ? game.active[0] : 0);
+    el.className = 'chat-msg' + (mine ? ' mine' : '');
+    el.style.cssText = '--pc:' + (DEF[m.p] || DEF[0]).color;
+
+    const name = document.createElement('span');
+    name.className = 'chat-name';
+    name.textContent = nameOf(m.p);
+
+    const bub = document.createElement('div');
+    bub.className = 'chat-bubble' +
+      (m.kind === 'sticker' ? ' chat-sticker' : m.kind === 'emoji' ? ' chat-emoji' : '');
+    bub.textContent = m.text;
+
+    const time = document.createElement('span');
+    time.className = 'chat-time';
+    time.textContent = chatStamp(m.t);
+
+    el.appendChild(name);
+    el.appendChild(bub);
+    el.appendChild(time);
+  }
+  chatLog.appendChild(el);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return el;
+}
+
+function pushChat (m) {
+  m.id = ++chatSeq;
+  m.t = Date.now();
+  chatMsgs.push(m);
+  if (chatMsgs.length > 80) chatMsgs.splice(0, chatMsgs.length - 80);
+  saveChat();
+  renderChatItem(m);
+}
+
+/* system lines: captures, home runs, wins, new games */
+function chatSystem (text) { if (text) pushChat({ sys: true, text: text }); }
+
+function isEmojiOnly (s) {
+  if (!s || s.length > 12) return false;
+  return Array.from(s).every(ch => {
+    const cp = ch.codePointAt(0);
+    return cp === 0x200d || cp === 0xfe0f ||
+      (cp >= 0x1f000 && cp <= 0x1faff) ||
+      (cp >= 0x2600 && cp <= 0x27bf) ||
+      (cp >= 0x2b00 && cp <= 0x2bff);
+  });
+}
+
+function sendChat (text, kind) {
+  const t = (text || '').trim();
+  if (!t) return;
+  pushChat({ p: chatSender(), text: t, kind: kind || 'text' });
+}
+
+function buildChatGrid (tab) {
+  if (!chatGrid) return;
+  chatGrid.innerHTML = '';
+  const sticker = tab === 'sticker';
+  const list = sticker ? STICKERS : EMOJIS;
+  list.forEach(item => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    if (sticker) {
+      b.className = 'st';
+      b.title = item.label;
+      b.textContent = item.art;
+      b.addEventListener('click', () => {
+        sendChat(item.art, 'sticker');
+        tone(880, .07, 'triangle', .045);
+        buzz(8);
+      });
+    } else {
+      b.textContent = item;
+      b.addEventListener('click', () => {
+        chatInput.value = (chatInput.value || '') + item;
+        if (typeof chatInput.focus === 'function') chatInput.focus();
+      });
+    }
+    chatGrid.appendChild(b);
+  });
+}
+
+function chatTrayToggle (force) {
+  if (!chatTray) return;
+  const show = force === undefined ? chatTray.classList.contains('hidden') : !!force;
+  chatTray.classList.toggle('hidden', !show);
+  if (show && (!chatGrid.children || !chatGrid.children.length)) buildChatGrid('emoji');
+}
+
+function openChat () {
+  if (!chatPanel) return;
+  chatPanel.classList.remove('hidden');
+  if (chatBtnEl) chatBtnEl.setAttribute('aria-expanded', 'true');
+  if (settingsPop) { settingsPop.classList.add('hidden'); settingsBtn.setAttribute('aria-expanded', 'false'); }
+  chatTrayToggle(false);
+  chatSyncSender();
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function closeChat () {
+  if (!chatPanel) return;
+  chatPanel.classList.add('hidden');
+  if (chatBtnEl) chatBtnEl.setAttribute('aria-expanded', 'false');
+  chatTrayToggle(false);
+}
+
+/* ---------- Chat wiring ---------- */
+if (chatBtnEl) chatBtnEl.addEventListener('click', e => {
+  e.stopPropagation();
+  if (chatPanel.classList.contains('hidden')) openChat();
+  else closeChat();
+});
+const chatCloseEl = document.getElementById('chatClose');
+if (chatCloseEl) chatCloseEl.addEventListener('click', closeChat);
+
+const chatClearEl = document.getElementById('chatClear');
+if (chatClearEl) chatClearEl.addEventListener('click', () => {
+  chatMsgs = [];
+  saveChat();
+  if (chatLog) chatLog.innerHTML = '<div id="chatEmpty" class="chat-empty"><span>\uD83D\uDCAC</span>Say hi \uD83D\uDC4B \u2014 messages stay on this device.</div>';
+});
+
+const chatEmojiBtn = document.getElementById('chatEmoji');
+if (chatEmojiBtn) chatEmojiBtn.addEventListener('click', () => chatTrayToggle());
+
+const chatTabs = chatTray ? chatTray.querySelector('.chat-tabs') : null;
+if (chatTabs) chatTabs.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  Array.prototype.forEach.call(chatTabs.children, x => x.classList.toggle('active', x === b));
+  buildChatGrid(b.dataset.tab);
+});
+
+if (chatForm) chatForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const v = (chatInput && chatInput.value) || '';
+  if (!v.trim()) return;
+  sendChat(v, isEmojiOnly(v.trim()) ? 'emoji' : 'text');
+  chatInput.value = '';
+  tone(720, .06, 'triangle', .04);
+  buzz(6);
+});
+
+/* click-away closes it (mirrors the settings popover) */
+document.addEventListener('click', e => {
+  if (!chatPanel || chatPanel.classList.contains('hidden')) return;
+  if (chatPanel.contains(e.target) || e.target === chatBtnEl) return;
+  closeChat();
+});
+
+/* replay saved history */
+chatMsgs.forEach(renderChatItem);
 
 /* ---------- Init ---------- */
 soundOn = prefs.sound !== false;
