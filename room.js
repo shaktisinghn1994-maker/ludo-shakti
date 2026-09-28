@@ -87,9 +87,9 @@ export class Room {
     return set;
   }
 
-  roster () {
+  roster (except) {
     const m = this.meta;
-    const live = this.liveSeats();
+    const live = this.liveSeats(except);
     return (m.seats || []).map(s => ({
       seat: s.seat, p: s.p, name: s.name, connected: live.has(s.seat)
     })).sort((a, b) => a.seat - b.seat);
@@ -346,10 +346,10 @@ export class Room {
     if (a.seat === 0 && !still.has(0)) {
       // the host drives the rules — give it a grace period before closing the room
       try { await this.state.storage.setAlarm(Date.now() + HOST_GRACE_MS); } catch (e) {}
-      this.broadcast({ t: 'seats', seats: this.roster(), count: meta.count, started: !!meta.started, hostDown: true }, ws);
+      this.broadcast({ t: 'seats', seats: this.roster(ws), count: meta.count, started: !!meta.started, hostDown: true }, ws);
       return;
     }
-    this.broadcast({ t: 'seats', seats: this.roster(), count: meta.count, started: !!meta.started }, ws);
+    this.broadcast({ t: 'seats', seats: this.roster(ws), count: meta.count, started: !!meta.started }, ws);
   }
 
   async alarm () {
