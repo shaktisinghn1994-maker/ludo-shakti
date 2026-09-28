@@ -156,6 +156,7 @@ export class Room {
     const name = String(m.name || '').trim().slice(0, 16) || 'Player';
     const token = String(m.token || '').trim().slice(0, 40);
     const isHost = m.role === 'host';
+    let seat = null;                       // assigned by whichever branch fits
 
     if (isHost) {
       if (meta.owner && token && meta.owner !== token) {
@@ -171,7 +172,7 @@ export class Room {
         Object.keys(meta).forEach(k => delete meta[k]);
         Object.assign(meta, fresh);
       }
-      let seat = meta.seats.find(s => s.seat === 0 && s.token === token);
+      seat = meta.seats.find(s => s.seat === 0 && s.token === token);
       if (!seat) {
         seat = { seat: 0, token: token, name: name, p: BY_COUNT[meta.count][0], connected: true, joined: Date.now() };
         meta.seats = meta.seats.filter(s => s.seat !== 0);
@@ -185,7 +186,7 @@ export class Room {
         try { ws.close(4004, 'no room'); } catch (e) {}
         return;
       }
-      let seat = token ? meta.seats.find(s => s.token === token && s.seat !== 0 && !s.connected) : null;
+      seat = token ? meta.seats.find(s => s.token === token && s.seat !== 0 && !s.connected) : null;
       if (!seat) {
         const taken = new Set(meta.seats.filter(s => s.connected || s.seat === 0).map(s => s.seat));
         let idx = -1;
