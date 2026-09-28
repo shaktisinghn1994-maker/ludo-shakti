@@ -591,6 +591,23 @@ body::before {
   perspective: 520px;
 }
 
+/* recessed holder: the die sits *inside* a tray instead of floating on the
+   card. 106px = the 74px die + 16px on each side, which also contains the
+   glow ring (7px) and the full landing bounce (-16px) without ever poking out. */
+.dice-tray {
+  width: 106px;
+  height: 106px;
+  display: grid;
+  place-items: center;
+  border-radius: 21px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, .10), rgba(15, 23, 42, .035));
+  border: 1px solid rgba(15, 23, 42, .11);
+  box-shadow:
+    inset 0 2px 6px rgba(15, 23, 42, .22),
+    inset 0 -1px 0 rgba(255, 255, 255, .8),
+    0 1px 0 rgba(255, 255, 255, .7);
+}
+
 .dice {
   width: 74px; height: 74px;
   background: linear-gradient(145deg, #ffffff, #e6eaf3);
@@ -1355,6 +1372,14 @@ html[data-theme="dark"] .dice-block {
     inset 0 1px 0 rgba(255, 255, 255, .07);
 }
 html[data-theme="dark"] .icon-btn, html[data-theme="dark"] .ghost-btn { color: var(--ink); }
+html[data-theme="dark"] .dice-tray {
+  background: linear-gradient(180deg, rgba(0, 0, 0, .45), rgba(0, 0, 0, .22));
+  border-color: rgba(255, 255, 255, .10);
+  box-shadow:
+    inset 0 2px 7px rgba(0, 0, 0, .60),
+    inset 0 -1px 0 rgba(255, 255, 255, .06),
+    0 1px 0 rgba(255, 255, 255, .05);
+}
 html[data-theme="dark"] .rules li { color: var(--ink); }
 html[data-theme="dark"] .hint { color: var(--muted); }
 html[data-theme="dark"] .dice {
