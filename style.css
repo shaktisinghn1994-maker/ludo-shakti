@@ -716,6 +716,28 @@ body::before {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* ============ Signature ============ */
+.sig {
+  margin-top: auto;
+  text-align: center;
+  font-size: 11.5px;
+  letter-spacing: .7px;
+  color: var(--muted);
+  padding: 8px 0 2px;
+  user-select: none;
+}
+.sig b { font-weight: 800; color: var(--ink); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .sig b {
+    background: linear-gradient(96deg, #d99a12 0%, #ffd977 46%, #c07f0c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.panel .sig { padding-bottom: 0; }
+.modal .sig { margin-top: 4px; }
+
 /* ============ Overlays ============ */
 .overlay {
   position: fixed;
@@ -1014,11 +1036,20 @@ html[data-theme="dark"] .board-frame {
   margin: 0 !important;
 }
 
+@media (max-width: 520px) {
+  .brand .sub { display: none; }
+  .brand h1 { font-size: 20px; }
+  .icon-btn, .ghost-btn { padding: 9px 11px; font-size: 13px; }
+}
+
 /* ============ Responsive ============ */
 @media (max-width: 860px) {
-  .layout { flex-direction: column; align-items: center; padding-bottom: 26px; }
+  .topbar { flex-wrap: wrap; row-gap: 8px; padding: 8px 12px; }
+  .actions { flex-wrap: wrap; justify-content: flex-end; }
+  .layout { flex-direction: column; align-items: center; padding: 4px 8px 26px; }
   .panel { width: min(92vw, 640px); }
-  .board { --board: min(94vw, 560px); }
+  /* keep the frame inside the viewport: layout padding + frame padding must fit */
+  .board { --board: min(calc(100vw - 40px), 560px); }
   .player-list { flex-direction: row; flex-wrap: wrap; }
   .player-card { flex: 1 1 45%; }
   .dice-block { flex-direction: row; justify-content: space-between; }
