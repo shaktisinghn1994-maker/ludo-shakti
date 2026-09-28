@@ -51,6 +51,10 @@
           <button data-time="30">30s</button>
         </div>
       </div>
+      <div class="set-row">
+        <span>Player names<span class="set-note">Replace Red / Yellow with real names</span></span>
+        <button id="namesBtn" class="ghost-btn">Edit</button>
+      </div>
     </div>
   </div>
 </header>
@@ -165,6 +169,25 @@
     <button type="submit" id="chatSend" class="chat-btn chat-go" title="Send">➤</button>
   </form>
 </aside>
+
+<!-- ===== Name editor (rename players) ===== -->
+<div id="renameModal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Edit player names">
+  <div class="modal rename-modal">
+    <button id="renameClose" class="modal-x" aria-label="Close">✕</button>
+    <h2>Edit names</h2>
+    <p class="tip">Pick a colour, type a name — it shows on the cards, the turn card and in chat.</p>
+    <div id="renameChips" class="rename-chips"></div>
+    <div class="name-row">
+      <span class="chip" id="renameDot"></span>
+      <input id="renameInput" type="text" maxlength="16" placeholder="Red" aria-label="Player name" />
+    </div>
+    <div class="modal-actions">
+      <button id="renameCancel" class="ghost-btn">Cancel</button>
+      <button id="renameSave" class="primary-btn">Save names</button>
+    </div>
+    <div class="sig">Designed &amp; built by <b>Shakti Singh</b></div>
+  </div>
+</div>
 
 <canvas id="fx" class="fx-layer" aria-hidden="true"></canvas>
 

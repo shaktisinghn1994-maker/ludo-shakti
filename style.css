@@ -808,7 +808,7 @@ body::before {
   gap: 10px;
   background: #f5f7fb;
   border-radius: 11px;
-  padding: 8px 11px;
+  padding: 4px 11px;
 }
 .name-row .chip {
   width: 16px; height: 16px; border-radius: 50%;
@@ -824,6 +824,7 @@ body::before {
   color: var(--ink);
   outline: none;
   min-width: 0;
+  min-height: 44px;   /* comfortable touch target */
 }
 
 .tip { font-size: 12.5px !important; margin-top: 0 !important; }
@@ -962,13 +963,13 @@ body::before {
 .modal { position: relative; }
 .modal-x {
   position: absolute;
-  top: 10px; right: 10px;
-  width: 34px; height: 34px;
+  top: 8px; right: 8px;
+  width: 44px; height: 44px;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--btn);
   color: var(--ink);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
   transition: transform .12s ease, background .15s ease;
@@ -1254,6 +1255,62 @@ body::before {
   .chat-panel, .chat-tray, .chat-msg, .chat-sys { animation: none; }
   .chat-sticker { animation: none; }
 }
+
+/* ============ Name editor (rename players) ============ */
+.player-card { cursor: pointer; }
+.player-card:hover { box-shadow: 0 10px 24px rgba(15, 23, 42, .16); }
+.player-card.active:hover {
+  box-shadow:
+    0 16px 34px rgba(15, 23, 42, .24),
+    inset 0 1px 0 rgba(255, 255, 255, .8),
+    0 0 0 2px var(--pc, #9aa3b2);
+}
+.player-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.player-card .prow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.player-card .pname { min-width: 0; }
+.player-card .pedit {
+  font-size: 12px;
+  opacity: .4;
+  flex: 0 0 auto;
+  transition: transform .18s ease, opacity .18s ease;
+}
+.player-card:hover .pedit { opacity: .95; transform: rotate(-10deg) scale(1.2); }
+
+.rename-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.rename-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  background: var(--btn);
+  border-radius: 11px;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .12s ease;
+}
+.rename-chip i {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .3);
+}
+.rename-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rename-chip:hover { border-color: var(--accent); }
+.rename-chip.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47, 111, 237, .3); }
+.rename-chip:active { transform: scale(.98); }
+.rename-modal .name-row { margin-bottom: 14px; }
+.rename-modal .tip { margin-bottom: 14px !important; }
 
 /* ============ Dark theme ============ */
 [data-theme="dark"] {

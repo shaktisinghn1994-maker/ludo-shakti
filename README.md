@@ -14,6 +14,8 @@ node server.js        # then visit http://localhost:8787
 
 - **Classic board & colors** — Red, Green, Yellow, Blue on a proper 15×15 Ludo board with a 52-square track, ★ safe squares, coloured home columns and the centre triangle
 - **2–4 players** with editable names
+  - a **name editor** (tap a player card ✏️, or *Settings → Player names → Edit*): colour chips pick the player, typing previews the new name live on the card, avatar initial, turn card, status line and chat; **Save** keeps it, **Cancel**/**Esc** reverts
+  - names persist per colour in `localStorage`, so "Shakti" is waiting for the next match and prefills the start screen
 - **Full Ludo rules**
   - Roll a **6** to bring a token out of the base
   - **Extra roll** on a 6; three 6s in a row forfeits the turn

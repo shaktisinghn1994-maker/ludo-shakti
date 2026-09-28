@@ -435,10 +435,19 @@ function buildCards () {
         '<span class="disc">' + initial + '</span>' +
       '</span>' +
       '<span class="pinfo">' +
-        '<span class="pname"></span>' +
+        '<span class="prow">' +
+          '<span class="pname"></span>' +
+          '<span class="pedit" title="Edit name">✏️</span>' +
+        '</span>' +
         '<span class="pstat">In base</span>' +
       '</span>' +
       '<span class="pcount">0/4</span>';
+
+    if (typeof card.setAttribute === 'function') {
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('title', 'Tap to edit this player\u2019s name');
+    }
 
     const refs = {
       name:  card.querySelector('.pname'),
@@ -454,6 +463,16 @@ function buildCards () {
     refs.timer.style.strokeDashoffset = RING_C.toFixed(2);
     refs.timer.style.opacity = 0;
     card._r = refs;
+
+    /* the card doubles as the name editor entry point */
+    card.addEventListener('click', () => openRename(p));
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        e.stopPropagation();
+        openRename(p);
+      }
+    });
 
     listEl.appendChild(card);
     return card;
@@ -713,6 +732,171 @@ function win (p) {
   chatSystem(nameOf(p) + ' wins the game! \uD83C\uDFC6');
 }
 
+/* ---------- Names: persisted per colour + editor ----------
+   Names belong to the colour (Red 0, Green 1, Yellow 2, Blue 3) rather than to
+   a single match, so "Shakti" you typed last week is waiting next game too. */
+const savedNames = (() => {
+  try { return JSON.parse(window.localStorage.getItem('ludo.names') || '{}') || {}; }
+  catch (e) { return {}; }
+})();
+
+function persistNames () {
+  try { window.localStorage.setItem('ludo.names', JSON.stringify(savedNames)); }
+  catch (e) { /* private mode / tests */ }
+}
+
+function storedName (p) { return savedNames[p] || DEF[p].label; }
+
+/* repaint cards, avatar initials, turn card and the chat "as …" label */
+function paintNames () {
+  if (!game.active.length) return;
+  buildCards();
+  updateUI();
+}
+
+function setName (p, raw, before) {
+  const v = (raw || '').trim().slice(0, 16) || DEF[p].label;
+  const from = before !== undefined ? before : (game.names[p] || storedName(p));
+  savedNames[p] = v;
+  if (game.active.length) game.names[p] = v;
+  persistNames();
+  const field = nameFields.querySelector('input[data-p="' + p + '"]');
+  if (field) field.value = v;
+  paintNames();
+  if (from !== v) {
+    /* keep the status line honest: "Red's turn" -> "Shakti's turn" */
+    const line = msgEl && msgEl.textContent;
+    if (line && line.indexOf(from) >= 0) msgEl.textContent = line.split(from).join(v);
+    chatSystem(from + ' is now ' + v);
+  }
+}
+
+/* ---------- Name editor modal ---------- */
+const renameModal = document.getElementById('renameModal');
+const renameChips = document.getElementById('renameChips');
+const renameInput = document.getElementById('renameInput');
+const renameDot   = document.getElementById('renameDot');
+let renameSel = null;
+let renameStaged = {};   // p -> text typed but not saved yet
+let renameOrig = {};     // p -> value before this editing session
+
+function renameRoster () {
+  return game.active.length ? game.active.slice() : BY_COUNT[chosenCount].slice();
+}
+function renameValue (p) {
+  return renameStaged[p] !== undefined ? renameStaged[p] : (game.names[p] || storedName(p));
+}
+
+function buildRenameChips () {
+  if (!renameChips) return;
+  renameChips.innerHTML = '';
+  renameRoster().forEach(p => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rename-chip' + (p === renameSel ? ' active' : '');
+    b.dataset.p = p;
+    b.innerHTML = '<i style="background:' + DEF[p].color + '"></i><span></span>';
+    const label = b.querySelector('span');
+    if (label) label.textContent = renameValue(p) || DEF[p].label;
+    b.addEventListener('click', () => selectRename(p));
+    renameChips.appendChild(b);
+  });
+}
+
+/* live preview: the card, turn card and chat label update as you type */
+function previewRename (p) {
+  const v = (renameValue(p) || '').trim() || DEF[p].label;
+  if (game.active.length) { game.names[p] = v; paintNames(); }
+  const field = nameFields.querySelector('input[data-p="' + p + '"]');
+  if (field) field.value = v;
+}
+
+function selectRename (p) {
+  renameSel = p;
+  const d = DEF[p];
+  if (renameDot) renameDot.style.background = d.color;
+  if (renameInput) {
+    renameInput.value = renameValue(p) || '';
+    renameInput.placeholder = d.label;
+    if (typeof renameInput.focus === 'function') renameInput.focus();
+    if (typeof renameInput.select === 'function') renameInput.select();
+  }
+  if (renameChips) Array.prototype.forEach.call(renameChips.children, c => {
+    c.classList.toggle('active', +c.dataset.p === p);
+  });
+}
+
+function openRename (p) {
+  if (!renameModal) return;
+  renameStaged = {};
+  renameOrig = {};
+  renameSel = null;
+  renameRoster().forEach(q => { renameOrig[q] = game.names[q]; });
+  buildRenameChips();
+  selectRename(typeof p === 'number' ? p : renameRoster()[0]);
+  renameModal.classList.remove('hidden');
+  clearTurnTimer();
+  if (settingsPop) {
+    settingsPop.classList.add('hidden');
+    settingsBtn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function closeRename () {
+  if (!renameModal) return;
+  renameModal.classList.add('hidden');
+  renameStaged = {};
+  renameSel = null;
+  resetTurnTimer();
+}
+
+function saveRename () {
+  const staged = renameStaged;
+  const keys = Object.keys(staged);
+  keys.forEach(k => setName(+k, staged[k], renameOrig[+k]));
+  closeRename();
+}
+
+function cancelRename () {
+  const keys = Object.keys(renameStaged);
+  keys.forEach(k => {
+    const p = +k;
+    const back = renameOrig[p];
+    if (back !== undefined && game.active.length) game.names[p] = back;
+    const field = nameFields.querySelector('input[data-p="' + p + '"]');
+    if (field) field.value = back !== undefined ? back : storedName(p);
+  });
+  if (keys.length) paintNames();
+  closeRename();
+}
+
+/* ---------- Name editor wiring ---------- */
+if (renameInput) {
+  renameInput.addEventListener('input', () => {
+    if (renameSel === null) return;
+    renameStaged[renameSel] = renameInput.value;
+    previewRename(renameSel);
+    buildRenameChips();
+  });
+  renameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); saveRename(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelRename(); }
+  });
+}
+const renameSaveBtn = document.getElementById('renameSave');
+if (renameSaveBtn) renameSaveBtn.addEventListener('click', saveRename);
+const renameCancelBtn = document.getElementById('renameCancel');
+if (renameCancelBtn) renameCancelBtn.addEventListener('click', cancelRename);
+const renameCloseBtn = document.getElementById('renameClose');
+if (renameCloseBtn) renameCloseBtn.addEventListener('click', cancelRename);
+if (renameModal) renameModal.addEventListener('click', e => {
+  if (e.target === renameModal) cancelRename();
+});
+const namesBtn = document.getElementById('namesBtn');
+if (namesBtn) namesBtn.addEventListener('click', () => {
+  openRename(game.active.length ? cur() : renameRoster()[0]);
+});
+
 /* ---------- Start / reset ---------- */
 function buildNameFields (n) {
   nameFields.innerHTML = '';
@@ -724,7 +908,7 @@ function buildNameFields (n) {
     const input = document.createElement('input');
     input.type = 'text';
     input.maxLength = 16;
-    input.value = DEF[p].label;
+    input.value = storedName(p);          // last used name for this colour
     input.placeholder = DEF[p].label;
     input.dataset.p = p;
     row.appendChild(input);
@@ -739,8 +923,11 @@ function startGame () {
   game.names = {};
   nameFields.querySelectorAll('input').forEach(inp => {
     const p = +inp.dataset.p;
-    game.names[p] = inp.value.trim() || DEF[p].label;
+    const v = (inp.value || '').trim() || DEF[p].label;
+    game.names[p] = v;
+    savedNames[p] = v;                     // remember for the next match
   });
+  persistNames();
   game.tokens = [[],[],[],[]];
   game.active.forEach(p => game.tokens[p] = [-1,-1,-1,-1]);
   game.idx = 0;
@@ -852,6 +1039,7 @@ function isTyping (el) {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    if (renameModal && !renameModal.classList.contains('hidden')) { cancelRename(); return; }
     if (chatPanel && !chatPanel.classList.contains('hidden')) { closeChat(); return; }
     if (settingsPop && !settingsPop.classList.contains('hidden')) {
       settingsPop.classList.add('hidden');
@@ -867,6 +1055,7 @@ document.addEventListener('keydown', e => {
   if (!startScreen.classList.contains('hidden')) return;
   if (!winScreen.classList.contains('hidden')) return;
   if (!rulesScreen.classList.contains('hidden')) return;
+  if (renameModal && !renameModal.classList.contains('hidden')) return;
   e.preventDefault();
   rollDice();
 });
