@@ -111,6 +111,7 @@ const net = {
   q: [],
   busy: false,
   applying: false,  // true while a remote change is being painted locally
+  lastErr: '',      // last room-side error (handy when a reload does not come back)
   winShown: false
 };
 
@@ -1938,7 +1939,7 @@ function netMessage (data) {
     case 'a':      return onRemoteAction(m);
     case 'chat':   return pushChat(m.m);
     case 'rename': return olApplyRename(m.p, m.v, net.role === 'host');
-    case 'err':    return olToast(m.text);
+    case 'err':    net.lastErr = m.text || ''; return olToast(m.text);
     case 'bye':    return olBye(m.text || 'The room closed.');
   }
 }
@@ -2006,6 +2007,7 @@ function olClosed () {
   net.ws = null;
   if (!wasHello) {
     /* handshake never finished (bad code / stale saved room) — no drama */
+    if (!net.lastErr) net.lastErr = 'closed before hello';
     net.room = false;
     net.hello = false;
     try { window.localStorage.removeItem(OL_KEY); } catch (e) {}
@@ -2074,6 +2076,7 @@ function olConnect (opts) {
   net.seat = -1; net.p = -1; net.snap = null;
   net.q = []; net.busy = false; net.seats = [];
   net.started = false; net.hostDown = false; net.winShown = false;
+  net.lastErr = '';
   net.count = opts.count || 2;
   olCountN = net.count;
   syncOnlineChrome();

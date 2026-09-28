@@ -75,10 +75,23 @@ export class Room {
     });
   }
 
+  /* which seats are actually attached right now — a stored flag lags behind a
+     reload, so liveness is read from the sockets themselves */
+  liveSeats (except) {
+    const set = new Set();
+    this.all().forEach(ws => {
+      if (ws === except) return;
+      const a = this.att(ws);
+      if (a && typeof a.seat === 'number') set.add(a.seat);
+    });
+    return set;
+  }
+
   roster () {
     const m = this.meta;
+    const live = this.liveSeats();
     return (m.seats || []).map(s => ({
-      seat: s.seat, p: s.p, name: s.name, connected: !!s.connected
+      seat: s.seat, p: s.p, name: s.name, connected: live.has(s.seat)
     })).sort((a, b) => a.seat - b.seat);
   }
 
@@ -186,9 +199,10 @@ export class Room {
         try { ws.close(4004, 'no room'); } catch (e) {}
         return;
       }
-      seat = token ? meta.seats.find(s => s.token === token && s.seat !== 0 && !s.connected) : null;
+      seat = token ? meta.seats.find(s => s.token === token && s.seat !== 0) : null;
       if (!seat) {
-        const taken = new Set(meta.seats.filter(s => s.connected || s.seat === 0).map(s => s.seat));
+        const live = this.liveSeats();
+        const taken = new Set(meta.seats.filter(s => live.has(s.seat) || s.seat === 0).map(s => s.seat));
         let idx = -1;
         for (let i = 1; i < meta.count; i++) if (!taken.has(i)) { idx = i; break; }
         if (idx < 0) {
@@ -205,6 +219,16 @@ export class Room {
         seat.connected = true;
         seat.name = name;
       }
+    }
+
+    /* a token proves ownership — reclaim the seat even if the old socket has not
+       been cleaned up yet, and retire any leftover socket still holding it */
+    if (token && seat) {
+      this.all().forEach(w => {
+        if (w === ws) return;
+        const b = this.att(w);
+        if (b && b.seat === seat.seat && b.token === token) { try { w.close(4009, 'replaced'); } catch (e) {} }
+      });
     }
 
     await this.save();
@@ -227,7 +251,8 @@ export class Room {
 
   async onStart (ws, meta, a) {
     if (a.seat !== 0) { this.send(ws, { t: 'err', text: 'Only the host can start the game.' }); return; }
-    const connected = meta.seats.filter(s => s.connected).length;
+    const live = this.liveSeats();
+    const connected = meta.seats.filter(s => live.has(s.seat)).length;
     if (connected < meta.count) {
       this.send(ws, { t: 'err', text: 'Waiting for players — ' + connected + '/' + meta.count + ' here.' });
       return;
@@ -313,11 +338,12 @@ export class Room {
     const meta = await this.load();
     const a = this.att(ws);
     if (!a) return;
+    const still = this.liveSeats(ws);                 // a reload may already hold this seat
     const seat = meta.seats.find(s => s.seat === a.seat);
-    if (seat) seat.connected = false;
+    if (seat && !still.has(a.seat)) seat.connected = false;
     await this.save();
 
-    if (a.seat === 0) {
+    if (a.seat === 0 && !still.has(0)) {
       // the host drives the rules — give it a grace period before closing the room
       try { await this.state.storage.setAlarm(Date.now() + HOST_GRACE_MS); } catch (e) {}
       this.broadcast({ t: 'seats', seats: this.roster(), count: meta.count, started: !!meta.started, hostDown: true }, ws);
@@ -329,8 +355,7 @@ export class Room {
   async alarm () {
     const meta = await this.load();
     try { await this.state.storage.deleteAlarm(); } catch (e) {}
-    const host = meta.seats.find(s => s.seat === 0);
-    if (host && host.connected) return;                      // made it back in time
+    if (this.liveSeats().has(0)) return;                      // host made it back in time
     this.broadcast({ t: 'bye', text: 'The host left the room.' });
     this.all().forEach(ws => { try { ws.close(1001, 'room closed'); } catch (e) {} });
     Object.keys(meta).forEach(k => delete meta[k]);
