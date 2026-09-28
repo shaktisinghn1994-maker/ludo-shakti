@@ -2,6 +2,8 @@
 .gitignore
 node_modules
 test.js
+room-test.js
+e2e-online.js
 server.js
 worker.js
 room.js
