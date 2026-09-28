@@ -146,11 +146,16 @@ registry.deco.innerHTML = '';
 api.buildBoard(); api.buildDeco(); api.buildPips(); api.buildCards();
 check('225 cells rendered', registry.cells.children.length === 225,
   'got ' + registry.cells.children.length);
-check('deco: 4 base inners + centre', registry.deco.children.length === 5,
+check('deco: 4 quads + 4 base inners + centre', registry.deco.children.length === 9,
   'got ' + registry.deco.children.length);
 
 const hasClass = (el, c) => el.className.split(' ').includes(c);
 const clsCount = c => registry.cells.children.filter(el => hasClass(el, c)).length;
+const decoQuads = registry.deco.children.filter(el => hasClass(el, 'quad'));
+check('4 quadrant sheens', decoQuads.length === 4, 'got ' + decoQuads.length);
+check('sheen covers a full 6x6 base',
+  decoQuads.every(q => q.style.width === '40%' && q.style.height === '40%'),
+  decoQuads.map(q => q.style.width).join(','));
 check('4 start squares', clsCount('start') === 4, 'got ' + clsCount('start'));
 check('4 star squares', clsCount('star') === 4, 'got ' + clsCount('star'));
 check('20 home-column cells', clsCount('home') === 20, 'got ' + clsCount('home'));

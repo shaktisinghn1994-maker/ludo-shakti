@@ -1,6 +1,6 @@
 # 🎲 Ludo — Pass & Play
 
-A complete Ludo board game for **2–4 players** in the browser. One device, taking turns — no server or internet needed.
+A complete Ludo board game for **2–4 players** in the browser. One device, taking turns — no server needed, and no build step or dependencies (the display fonts come from Google Fonts when online and fall back to the system stack offline).
 
 ## Play
 
@@ -20,17 +20,25 @@ node server.js        # then visit http://localhost:8787
   - Land on an opponent to send it back — except on ★ safe squares
   - Your own tokens stack; exact roll required to reach the centre
   - First to get all **4 tokens home** wins 🏆
-- **Polish** — animated dice, step-by-step token movement, glowing highlights on movable tokens, sound effects (mutable), responsive layout for phones
+- **Premium UI**
+  - Wooden board frame, gradient quadrant textures, glowing ★ safe squares, pulsing centre
+  - Chess-king tokens with a socket dish, idle bob, glow ring on movable pieces
+  - Glass HUD: avatar player cards with SVG progress rings, turn card, glowing dice widget
+  - Motion: 3D dice tumble + landing bounce, eased step-by-step movement, capture poof + fly-back, confetti on home/win
+  - Light & dark themes, ambient animated background, Fredoka/Nunito typography, SVG favicon
+- **Settings (gear icon)** — light/dark theme, sound effects, optional turn timer (auto-roll, default off); persisted in `localStorage`
+- **Feel** — haptic micro-interactions on mobile, press ripples, ≥44px touch targets, phones play without horizontal scroll
+- **Polish** — sound effects (mutable), fully responsive layout
 
 ## Project structure
 
-| File         | Purpose                                   |
-|--------------|-------------------------------------------|
-| `index.html` | Page structure, start screen, rules, popup |
-| `style.css`  | Board, tokens, dice, responsive layout     |
-| `script.js`  | Game engine                               |
-| `server.js`  | Optional local static server              |
-| `test.js`    | Headless tests — `node test.js`           |
+| File         | Purpose                                        |
+|--------------|------------------------------------------------|
+| `index.html` | Page structure, start/rules/win screens, settings |
+| `style.css`  | Board, tokens, HUD, themes, motion, responsive |
+| `script.js`  | Game engine + canvas FX (confetti/particles)   |
+| `server.js`  | Optional local static server                   |
+| `test.js`    | Headless tests — `node test.js`                |
 
 ## Tests
 
