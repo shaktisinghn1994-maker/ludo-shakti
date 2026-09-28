@@ -50,14 +50,16 @@ export class Room {
   }
 
   send (ws, o) {
-    try { if (ws.readyState === 1) ws.send(JSON.stringify(o)); } catch (e) { /* gone */ }
+    /* no readyState check here: on the server side of a hibernated socket it is
+       not always 1 yet, and a silent guard would drop every reply. */
+    try { ws.send(JSON.stringify(o)); } catch (e) { /* socket already gone */ }
   }
 
   broadcast (o, except) {
     const s = JSON.stringify(o);
     this.all().forEach(ws => {
       if (ws === except) return;
-      try { if (ws.readyState === 1) ws.send(s); } catch (e) { /* gone */ }
+      try { ws.send(s); } catch (e) { /* socket already gone */ }
     });
   }
 
