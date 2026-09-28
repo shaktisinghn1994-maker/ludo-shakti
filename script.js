@@ -90,6 +90,30 @@ let rollIv = null;
 let soundOn = true;
 let chosenCount = 4;
 
+/* Online room state (the "Online rooms" section at the bottom drives it).
+   Declared up here so every hook below can safely touch it during load. */
+const net = {
+  on: false,        // socket open and hello received
+  room: false,      // we intend to be in a room (true while connecting too)
+  hello: false,
+  bye: false,       // we closed the socket on purpose
+  role: null,       // 'host' | 'guest'
+  code: null,
+  token: null,
+  seat: -1,         // our seat (== index into game.active)
+  p: -1,            // colour index we play
+  count: 2,
+  seats: [],
+  started: false,
+  hostDown: false,
+  ws: null,
+  snap: null,
+  q: [],
+  busy: false,
+  applying: false,  // true while a remote change is being painted locally
+  winShown: false
+};
+
 const cur = () => game.active[game.idx];
 const nameOf = p => game.names[p] || DEF[p].label;
 
@@ -350,7 +374,11 @@ function buildTokens () {
       el.addEventListener('click', () => {
         if (game.phase !== 'select') return;
         const m = game.movable.find(x => x.p === p && x.t === t);
-        if (m) { buzz(8); performMove(m); }
+        if (!m) return;
+        if (net.room && !myTurn()) return;
+        if (net.room && net.role === 'guest') { netSend({ t: 'a', a: { k: 'tap', p: p, t: t } }); return; }
+        buzz(8);
+        performMove(m);
       });
       tokensEl.appendChild(el);
       tokenEls[p][t] = el;
@@ -412,6 +440,7 @@ function msg (text) {
   msgEl.classList.remove('pop');
   void msgEl.offsetWidth;
   msgEl.classList.add('pop');
+  netSync();
 }
 
 /* progress ring geometry (viewBox 46x46, r=19) */
@@ -512,8 +541,9 @@ function updateUI () {
     r.count.title = homes + ' of 4 tokens home';
   });
 
-  rollBtn.disabled = game.phase !== 'roll';
-  diceEl.classList.toggle('ready', game.phase === 'roll' || game.phase === 'rolling');
+  const myGo = myTurn();
+  rollBtn.disabled = game.phase !== 'roll' || !myGo;
+  diceEl.classList.toggle('ready', (game.phase === 'roll' || game.phase === 'rolling') && myGo);
 
   game.active.forEach(pp => {
     for (let t = 0; t < 4; t++) {
@@ -527,6 +557,7 @@ function updateUI () {
 
   resetTurnTimer();
   if (typeof chatSyncSender === 'function') chatSyncSender();
+  netSync();
 }
 
 /* ---------- Rules engine ---------- */
@@ -544,6 +575,8 @@ function legalMoves (p, v) {
 /* ---------- Turn flow ---------- */
 function rollDice () {
   if (paused) return;
+  if (net.room && !myTurn()) { olToast('Waiting for ' + nameOf(cur()) + '…'); return; }
+  if (net.room && net.role === 'guest') { netSend({ t: 'a', a: 'roll' }); return; }
   if (game.phase !== 'roll' || !game.active.length) return;
   game.phase = 'rolling';
   updateUI();
@@ -616,6 +649,7 @@ function performMove (m) {
   const from = game.tokens[p][m.t];
   game.currentMove = { p, t: m.t, steps: m.steps, to: (from === -1 ? 0 : from + m.steps) };
   updateUI();
+  netEmit({ k: 'mv', p: p, t: m.t, from: from, to: game.currentMove.to });
 
   // coming out of the base: one hop onto the start square
   if (game.tokens[p][m.t] === -1) {
@@ -768,6 +802,7 @@ function setName (p, raw, before) {
     const line = msgEl && msgEl.textContent;
     if (line && line.indexOf(from) >= 0) msgEl.textContent = line.split(from).join(v);
     chatSystem(from + ' is now ' + v);
+    if (net.on && !net.applying) netSend({ t: 'rename', p: p, v: v });
   }
 }
 
@@ -919,6 +954,7 @@ function buildNameFields (n) {
 function startGame () {
   clearTimers();
   paused = null;
+  winScreen.classList.add('hidden');
   game.active = BY_COUNT[chosenCount].slice();
   game.names = {};
   nameFields.querySelectorAll('input').forEach(inp => {
@@ -980,6 +1016,8 @@ function settleBeforePause () {
 }
 
 function openStartScreen () {
+  /* inside a room the room owns the match: "new game" means back to the lobby */
+  if (net.room) { olOpen(); return; }
   const live = game.active.length > 0 && game.phase !== 'idle' && game.phase !== 'over';
   paused = null;
   if (live) {
@@ -1040,6 +1078,7 @@ function isTyping (el) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (renameModal && !renameModal.classList.contains('hidden')) { cancelRename(); return; }
+    if (olScreen && !olScreen.classList.contains('hidden')) { olCloseScreen(); return; }
     if (chatPanel && !chatPanel.classList.contains('hidden')) { closeChat(); return; }
     if (settingsPop && !settingsPop.classList.contains('hidden')) {
       settingsPop.classList.add('hidden');
@@ -1053,6 +1092,7 @@ document.addEventListener('keydown', e => {
   if (e.code !== 'Space') return;
   if (isTyping(e.target)) return;
   if (!startScreen.classList.contains('hidden')) return;
+  if (olScreen && !olScreen.classList.contains('hidden')) return;
   if (!winScreen.classList.contains('hidden')) return;
   if (!rulesScreen.classList.contains('hidden')) return;
   if (renameModal && !renameModal.classList.contains('hidden')) return;
@@ -1428,7 +1468,16 @@ function saveChat () {
   catch (e) { /* private mode / tests */ }
 }
 
-function chatSender () { return game.active.length ? cur() : 0; }
+function chatSender () {
+  if (net.on && net.seat >= 0 && game.active[net.seat] !== undefined) return game.active[net.seat];
+  return game.active.length ? cur() : 0;
+}
+
+/* colour this device plays: the room seat when online, Red otherwise */
+function myColour () {
+  if (net.on && net.seat >= 0 && game.active[net.seat] !== undefined) return game.active[net.seat];
+  return game.active.length ? game.active[0] : 0;
+}
 
 function chatSyncSender () {
   const p = chatSender();
@@ -1452,7 +1501,7 @@ function renderChatItem (m) {
     el.className = 'chat-sys';
     el.textContent = m.text;
   } else {
-    const mine = m.p === (game.active.length ? game.active[0] : 0);
+    const mine = m.p === myColour();
     el.className = 'chat-msg' + (mine ? ' mine' : '');
     el.style.cssText = '--pc:' + (DEF[m.p] || DEF[0]).color;
 
@@ -1488,7 +1537,11 @@ function pushChat (m) {
 }
 
 /* system lines: captures, home runs, wins, new games */
-function chatSystem (text) { if (text) pushChat({ sys: true, text: text }); }
+function chatSystem (text) {
+  if (!text) return;
+  pushChat({ sys: true, text: text });
+  netSend({ t: 'chat', sys: true, text: text });     // the room shares one log
+}
 
 function isEmojiOnly (s) {
   if (!s || s.length > 12) return false;
@@ -1505,6 +1558,7 @@ function sendChat (text, kind) {
   const t = (text || '').trim();
   if (!t) return;
   pushChat({ p: chatSender(), text: t, kind: kind || 'text' });
+  netSend({ t: 'chat', kind: kind || 'text', text: t });
 }
 
 function buildChatGrid (tab) {
@@ -1605,6 +1659,663 @@ document.addEventListener('click', e => {
 
 /* replay saved history */
 chatMsgs.forEach(renderChatItem);
+
+/* ---------- Online rooms: one code, the same match on every phone ----------
+   The host runs the rules engine exactly as in pass & play and pushes state
+   snapshots; everyone else mirrors that state and asks the room to forward
+   their rolls and moves. The server seats players, keeps the chat log and
+   enforces whose turn it is — it never needs to know the rules. */
+const OL_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const OL_KEY = 'ludo.room';
+const OL_NAME_KEY = 'ludo.me';
+
+const olScreen    = document.getElementById('onlineScreen');
+const olMain      = document.getElementById('olMain');
+const olLobby     = document.getElementById('olLobby');
+const olTabs      = document.getElementById('olTabs');
+const olCreatePane = document.getElementById('olCreate');
+const olJoinPane  = document.getElementById('olJoin');
+const olNameIn    = document.getElementById('olHostName');
+const olJoinIn    = document.getElementById('olJoinName');
+const olCodeIn    = document.getElementById('olCode');
+const olCountSeg  = document.getElementById('olCount');
+const olCreateBtn = document.getElementById('olCreateBtn');
+const olJoinBtn   = document.getElementById('olJoinBtn');
+const olCopyBtn   = document.getElementById('olCopyBtn');
+const olCodeOut   = document.getElementById('olCodeOut');
+const olLinkOut   = document.getElementById('olLinkOut');
+const olSeatList  = document.getElementById('olSeatList');
+const olStatus    = document.getElementById('olStatus');
+const olStartBtn  = document.getElementById('olStartBtn');
+const olLeaveBtn  = document.getElementById('olLeaveBtn');
+const olErrEl     = document.getElementById('olErr');
+const olCloseEl   = document.getElementById('olClose');
+const onlineBtn   = document.getElementById('onlineBtn');
+const olNewGameBtn = document.getElementById('newGameBtn');
+
+let olCountN = 2;
+
+function olRand (n, alphabet) {
+  const chars = alphabet || OL_CHARS;
+  let out = '';
+  try {
+    const buf = new Uint8Array(n);
+    const c = (typeof window !== 'undefined' && window.crypto) ? window.crypto
+      : (typeof crypto !== 'undefined' ? crypto : null);
+    if (!c || !c.getRandomValues) throw new Error('no crypto');
+    c.getRandomValues(buf);
+    for (let i = 0; i < n; i++) out += chars[buf[i] % chars.length];
+  } catch (e) {
+    for (let i = 0; i < n; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+/* only the seat whose turn it is may touch the board */
+function myTurn () {
+  if (!net.room) return true;
+  if (!net.on || net.seat < 0 || !game.active.length) return false;
+  return game.active[net.seat] === cur();
+}
+
+function netSend (o) {
+  try { if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify(o)); } catch (e) {}
+}
+function netEmit (ev) { if (net.on && net.role === 'host') netSend({ t: 'e', ev: ev }); }
+
+function netSnapshot () {
+  return {
+    act: game.active.slice(),
+    idx: game.idx,
+    ph: game.phase,
+    dice: game.dice,
+    six: game.sixes,
+    mov: (game.movable || []).map(m => ({ p: m.p, t: m.t, steps: m.steps })),
+    names: Object.assign({}, game.names),
+    tok: [0, 1, 2, 3].map(p => (game.tokens[p] || []).slice()),
+    msg: (msgEl && msgEl.textContent) || ''
+  };
+}
+
+/* the host publishes after every state change; msg() and updateUI() both end here */
+function netSync () {
+  if (!net.on || net.role !== 'host' || !net.started) return;
+  if (!game.active.length) return;
+  netSend({ t: 's', snap: netSnapshot() });
+}
+
+/* ---------- receiving: one ordered queue so motion and state can't swap ---------- */
+function netPush (item) { net.q.push(item); netPump(); }
+
+function netPump () {
+  if (net.busy) return;
+  let item = net.q.shift();
+  if (!item) return;
+  if (item.k === 'snap') {
+    while (net.q.length && net.q[0].k === 'snap') item = net.q.shift();   // newest wins
+    netApply(item.s);
+    netPump();
+    return;
+  }
+  if (item.k === 'ev') {
+    net.busy = true;
+    netWalk(item.ev, () => { net.busy = false; netPump(); });
+    return;
+  }
+  netPump();
+}
+
+/* replay the host's step-by-step walk so remote moves look identical */
+function netWalk (ev, done) {
+  const finish = () => done();
+  if (!ev || game.active.indexOf(ev.p) < 0 || !game.tokens[ev.p] ||
+      game.tokens[ev.p][ev.t] === undefined) { finish(); return; }
+
+  if (ev.from === -1) {
+    game.tokens[ev.p][ev.t] = 0;
+    renderTokens();
+    hopToken(ev.p, ev.t);
+    tone(700, .1, 'triangle', .05);
+    setTimeout(finish, 340);
+    return;
+  }
+
+  game.tokens[ev.p][ev.t] = ev.from;
+  renderTokens();
+  const to = ev.to;
+  const total = Math.max(1, to - ev.from);
+  let n = 0;
+  const iv = setInterval(() => {
+    game.tokens[ev.p][ev.t] = Math.min(to, game.tokens[ev.p][ev.t] + 1);
+    hopToken(ev.p, ev.t);
+    tone(580 + n * 30, .05, 'triangle', .04);
+    renderTokens();
+    if (++n >= total || game.tokens[ev.p][ev.t] >= to) {
+      clearInterval(iv);
+      setTimeout(finish, 240);
+    }
+  }, 165);
+}
+
+function netApply (s) {
+  if (!s || !Array.isArray(s.act) || !s.act.length) return;
+  const prev = net.snap;
+  const rebuild = !prev || game.active.join(',') !== s.act.join(',');
+  net.snap = s;
+
+  if (rebuild) {
+    chosenCount = s.act.length;
+    game.active = s.act.slice();
+    game.idx = s.idx;
+    game.phase = 'idle';
+    game.tokens = [[], [], [], []];
+    game.active.forEach(p => { game.tokens[p] = [-1, -1, -1, -1]; });
+    game.movable = []; game.pending = null; game.queued = null;
+    game.currentMove = null; game.resolved = true;
+    net.winShown = false;
+    buildTokens();
+    buildCards();
+    startScreen.classList.add('hidden');
+    rulesScreen.classList.add('hidden');
+    winScreen.classList.add('hidden');
+  } else {
+    netFx(s);                 // captures / home runs the walk just caused
+  }
+
+  netApplyNames(s.names);
+
+  game.idx = s.idx;
+  game.phase = s.ph;
+  game.dice = s.dice;
+  game.sixes = s.six;
+  game.movable = (s.mov || []).slice();
+  netPlace(s);
+
+  diceEl.classList.toggle('rolling', s.ph === 'rolling');
+  if (s.dice === null || s.dice === undefined) {
+    if (s.ph !== 'rolling') showDice(null);
+  } else if (!prev || prev.dice !== s.dice) {
+    showDice(s.dice);
+    diceEl.classList.remove('landed');
+    void diceEl.offsetWidth;
+    diceEl.classList.add('landed');
+    later(() => diceEl.classList.remove('landed'), 540);
+  }
+
+  const text = s.msg || '';
+  if (text && msgEl && msgEl.textContent !== text) msg(text);
+
+  updateUI();
+
+  if (s.ph === 'over') netShowWin(rebuild);
+  else {
+    net.winShown = false;
+    if (!winScreen.classList.contains('hidden')) winScreen.classList.add('hidden');
+  }
+}
+
+function netPlace (s) {
+  if (!s.tok) return;
+  s.tok.forEach((arr, p) => {
+    if (!arr || game.active.indexOf(p) < 0) return;
+    game.tokens[p] = arr.slice();
+  });
+  renderTokens();
+}
+
+/* what changed on screen since the last paint: knockouts and finishes */
+function netFx (s) {
+  if (!s.tok) return;
+  s.tok.forEach((arr, p) => {
+    if (!arr || game.active.indexOf(p) < 0) return;
+    const now = game.tokens[p] || [];
+    arr.forEach((nw, t) => {
+      const old = now[t];
+      if (old === undefined || old === nw) return;
+      if (old >= 0 && old <= 51 && nw === -1) {
+        const pos = cellXY(p, old, t);
+        if (pos) captureFX(p, t, Object.assign({ q: p, k: t }, pos));
+        soundCapture();
+        soundLaugh(.2);
+        buzz([14, 45, 14]);
+      } else if (old !== HOME && nw === HOME) {
+        const home = cellXY(p, HOME, t);
+        if (home) fxBurst(home.x, home.y, DEF[p].color, 34);
+        soundHome();
+        buzz(16);
+      }
+    });
+  });
+}
+
+function netShowWin (quiet) {
+  const s = net.snap;
+  const w = (s.act || []).find(p =>
+    (s.tok[p] || []).length === 4 && s.tok[p].every(x => x === HOME));
+  if (w === undefined) return;
+  document.getElementById('winTitle').textContent = nameOf(w) + ' wins!';
+  winScreen.classList.remove('hidden');
+  if (!quiet && !net.winShown) { soundWin(); buzz([25, 60, 25]); fxRain(180); }
+  net.winShown = true;
+}
+
+function netApplyNames (names) {
+  if (!names) return;
+  Object.keys(names).forEach(k => {
+    const v = names[k];
+    if (typeof v !== 'string') return;
+    olApplyRename(+k, v, net.role === 'host');
+  });
+}
+
+/* repaint a name without re-broadcasting it (the sender already told the room) */
+function olApplyRename (p, v, persist) {
+  const clean = (v || '').trim().slice(0, 16);
+  if (!clean || !(p >= 0 && p <= 3)) return;
+  const from = game.names[p] || storedName(p);
+  if (clean === from) return;
+  net.applying = true;
+  game.names[p] = clean;
+  if (persist) { savedNames[p] = clean; persistNames(); }
+  const field = nameFields.querySelector('input[data-p="' + p + '"]');
+  if (field) field.value = clean;
+  paintNames();
+  const line = msgEl && msgEl.textContent;
+  if (line && line.indexOf(from) >= 0) msgEl.textContent = line.split(from).join(clean);
+  net.applying = false;
+}
+
+/* ---------- messages ---------- */
+function netMessage (data) {
+  let m = null;
+  try { m = JSON.parse(data); } catch (e) { return; }
+  if (!m || typeof m.t !== 'string') return;
+  switch (m.t) {
+    case 'hello':  return onHello(m);
+    case 'seats':  return onSeats(m);
+    case 's':      return netPush({ k: 'snap', s: m.snap });
+    case 'e':      return netPush({ k: 'ev', ev: m.ev });
+    case 'a':      return onRemoteAction(m);
+    case 'chat':   return pushChat(m.m);
+    case 'rename': return olApplyRename(m.p, m.v, net.role === 'host');
+    case 'err':    return olToast(m.text);
+    case 'bye':    return olBye(m.text || 'The room closed.');
+  }
+}
+
+function onHello (m) {
+  net.hello = true;
+  net.seat = m.seat;
+  net.p = m.p;
+  net.role = m.owner ? 'host' : 'guest';
+  net.count = m.count || net.count;
+  olCountN = net.count;
+  net.seats = m.seats || [];
+  net.started = !!m.started;
+  net.hostDown = false;
+  try {
+    window.localStorage.setItem(OL_KEY, JSON.stringify({
+      code: net.code, token: net.token, role: net.role, count: net.count, name: olMyName()
+    }));
+  } catch (e) {}
+
+  /* replay what the room has already seen, skipping lines we already have */
+  if (Array.isArray(m.chat)) m.chat.forEach(x => {
+    if (!x) return;
+    if (chatMsgs.some(y => y && y.t === x.t && y.text === x.text && y.p === x.p)) return;
+    pushChat(x);
+  });
+
+  if (m.snap) netPush({ k: 'snap', s: m.snap });    // restore after a reload
+
+  syncOnlineChrome();
+  if (m.started && m.snap) olCloseScreen();          // straight back into the match
+  else { olShowLobby(); olScreen.classList.remove('hidden'); olErr(''); }
+}
+
+function onSeats (m) {
+  net.seats = m.seats || net.seats;
+  if (m.count) { net.count = m.count; olCountN = m.count; }
+  if (m.started !== undefined) net.started = !!m.started;
+  net.hostDown = !!m.hostDown;
+  if (olScreen && !olScreen.classList.contains('hidden')) olPaintLobby();
+  if (net.started && net.role === 'guest') olCloseScreen();
+}
+
+/* the room forwards a guest's action to the host, which owns the engine */
+function onRemoteAction (m) {
+  if (net.role !== 'host') return;
+  const a = m.a;
+  if (a === 'roll') {
+    if (game.phase === 'roll' && myTurn()) rollDice();
+    netSync();
+    return;
+  }
+  if (a && a.k === 'tap') {
+    const mv = (game.movable || []).find(x => x.p === a.p && x.t === a.t);
+    if (mv && game.phase === 'select' && myTurn()) { buzz(8); performMove(mv); }
+    netSync();                                       // always answer, even a no-op
+  }
+}
+
+function olClosed () {
+  const wasHello = net.hello;
+  const role = net.role;
+  if (net.bye) { net.bye = false; return; }
+  net.on = false;
+  net.ws = null;
+  if (!wasHello) {
+    /* handshake never finished (bad code / stale saved room) — no drama */
+    net.room = false;
+    net.hello = false;
+    try { window.localStorage.removeItem(OL_KEY); } catch (e) {}
+    syncOnlineChrome();
+    if (olScreen && !olScreen.classList.contains('hidden')) {
+      olShowMain();
+      olErr('Room not found — check the code.');
+    }
+    return;
+  }
+  olBye(role === 'host' ? 'Connection lost.' : 'The host closed the room.');
+}
+
+function olBye (text) {
+  olDisconnect();
+  olCloseScreen();
+  winScreen.classList.add('hidden');
+  rulesScreen.classList.add('hidden');
+  paused = null;
+  clearTimers();
+  clearTurnTimer();
+  game.phase = 'idle';
+  startScreen.classList.remove('hidden');
+  syncStartChrome();
+  msg(text);
+}
+
+function olLeave () {
+  if (net.on) netSend({ t: 'leave' });
+  olBye('You left the room.');
+}
+
+function olDisconnect () {
+  net.bye = true;
+  try { if (net.ws) { net.ws.onclose = null; net.ws.close(); } } catch (e) {}
+  net.ws = null;
+  net.on = false; net.room = false; net.hello = false; net.bye = false;
+  net.seat = -1; net.p = -1; net.snap = null; net.q = []; net.busy = false;
+  net.seats = []; net.started = false; net.hostDown = false;
+  net.role = null; net.code = null; net.winShown = false;
+  try { window.localStorage.removeItem(OL_KEY); } catch (e) {}
+  syncOnlineChrome();
+}
+
+function netStopLocal () {
+  if (!game.active.length || game.phase === 'idle' || game.phase === 'over') return;
+  settleBeforePause();
+  clearTimers();
+  clearTurnTimer();
+  paused = null;
+  game.phase = 'idle';
+  winScreen.classList.add('hidden');
+}
+
+function olConnect (opts) {
+  olErr('');
+  if (net.on || net.room) olDisconnect();
+  netStopLocal();
+  net.room = true;
+  net.on = false;
+  net.hello = false;
+  net.bye = false;
+  net.role = opts.role;
+  net.code = String(opts.code || '').toUpperCase();
+  net.token = opts.token || olRand(16, 'abcdefghijklmnopqrstuvwxyz0123456789');
+  net.seat = -1; net.p = -1; net.snap = null;
+  net.q = []; net.busy = false; net.seats = [];
+  net.started = false; net.hostDown = false; net.winShown = false;
+  net.count = opts.count || 2;
+  olCountN = net.count;
+  syncOnlineChrome();
+
+  if (typeof WebSocket === 'undefined') {
+    olErr('This browser cannot open a room.');
+    net.room = false;
+    syncOnlineChrome();
+    return;
+  }
+  const proto = (typeof location !== 'undefined' && location.protocol === 'https:') ? 'wss://' : 'ws://';
+  let ws;
+  try {
+    ws = new WebSocket(proto + location.host + '/room/' + net.code);
+  } catch (e) {
+    olErr('Could not reach the room service.');
+    net.room = false;
+    syncOnlineChrome();
+    return;
+  }
+  net.ws = ws;
+  ws.onopen = () => {
+    net.on = true;
+    netSend({ t: 'hi', role: net.role, name: opts.name, count: net.count, token: net.token });
+    if (olStatus) olStatus.textContent = 'Connecting…';
+    syncOnlineChrome();
+  };
+  ws.onmessage = e => netMessage(e.data);
+  ws.onerror = () => {};
+  ws.onclose = () => olClosed();
+}
+
+/* ---------- lobby ui ---------- */
+function olErr (text) {
+  if (!olErrEl) return;
+  olErrEl.textContent = text || '';
+  olErrEl.classList.toggle('hidden', !text);
+}
+function olToast (text) {
+  if (!text) return;
+  if (olScreen && !olScreen.classList.contains('hidden')) { olErr(text); return; }
+  if (net.role === 'guest') msg(text);       // host messages are the source of truth
+}
+function syncOnlineChrome () {
+  if (olNewGameBtn) olNewGameBtn.classList.toggle('hidden', !!net.room);
+  if (onlineBtn) onlineBtn.classList.toggle('ol-live', !!net.on);
+}
+function olShareUrl () {
+  try { return location.origin + '/?room=' + net.code; }
+  catch (e) { return '/?room=' + (net.code || ''); }
+}
+function olShowMain () {
+  if (olMain) olMain.classList.remove('hidden');
+  if (olLobby) olLobby.classList.add('hidden');
+}
+function olShowLobby () {
+  if (olMain) olMain.classList.add('hidden');
+  if (olLobby) olLobby.classList.remove('hidden');
+  olPaintLobby();
+}
+function olOpen () {
+  if (!olScreen) return;
+  olErr('');
+  if (net.hello) olShowLobby(); else olShowMain();
+  olScreen.classList.remove('hidden');
+  if (onlineBtn && typeof onlineBtn.setAttribute === 'function') onlineBtn.setAttribute('aria-expanded', 'true');
+  olPrefill();
+}
+function olCloseScreen () {
+  if (!olScreen) return;
+  olScreen.classList.add('hidden');
+  if (olErrEl) olErrEl.classList.add('hidden');
+  if (onlineBtn && typeof onlineBtn.setAttribute === 'function') onlineBtn.setAttribute('aria-expanded', 'false');
+}
+function olSavedName () {
+  try { return window.localStorage.getItem(OL_NAME_KEY) || ''; } catch (e) { return ''; }
+}
+function olRememberName (n) { try { window.localStorage.setItem(OL_NAME_KEY, n); } catch (e) {} }
+function olMyName () {
+  if (olNameIn && olNameIn.value && olNameIn.value.trim()) return olNameIn.value.trim();
+  if (olJoinIn && olJoinIn.value && olJoinIn.value.trim()) return olJoinIn.value.trim();
+  return olSavedName() || 'Player';
+}
+function olPrefill () {
+  const saved = olSavedName();
+  if (olNameIn && !olNameIn.value) olNameIn.value = saved;
+  if (olJoinIn && !olJoinIn.value) olJoinIn.value = saved;
+}
+function olSwitchTab (tab) {
+  if (olCreatePane) olCreatePane.classList.toggle('hidden', tab !== 'create');
+  if (olJoinPane) olJoinPane.classList.toggle('hidden', tab !== 'join');
+  if (olTabs) Array.prototype.forEach.call(olTabs.children,
+    b => b.classList.toggle('active', !!(b && b.dataset && b.dataset.tab === tab)));
+}
+function olPaintLobby () {
+  if (olCodeOut) olCodeOut.textContent = net.code || '······';
+  if (olLinkOut) olLinkOut.textContent = olShareUrl();
+  if (olStartBtn) olStartBtn.classList.toggle('hidden', net.role !== 'host');
+
+  const seats = net.seats.slice().sort((a, b) => a.seat - b.seat);
+  const roster = BY_COUNT[net.count] || BY_COUNT[2];
+  const rows = seats.slice();
+  for (let i = seats.length; i < net.count; i++) rows.push(null);
+
+  if (olSeatList) {
+    olSeatList.innerHTML = '';
+    rows.forEach((s, i) => {
+      const li = document.createElement('li');
+      li.className = 'ol-seat';
+      const p = s ? s.p : (roster[i] !== undefined ? roster[i] : roster[0]);
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.style.background = DEF[p].color;
+      const nm = document.createElement('b');
+      nm.textContent = s ? s.name : 'Empty seat';
+      li.appendChild(chip);
+      li.appendChild(nm);
+      if (s && s.seat === net.seat) {
+        const you = document.createElement('span');
+        you.className = 'ol-you';
+        you.textContent = 'you';
+        li.appendChild(you);
+      }
+      const st = document.createElement('span');
+      st.className = 'ol-state' + (s && s.connected ? '' : ' wait');
+      st.textContent = s ? (s.connected ? 'ready' : 'offline') : 'open';
+      li.appendChild(st);
+      olSeatList.appendChild(li);
+    });
+  }
+
+  if (olStatus) {
+    const ready = seats.filter(s => s.connected).length;
+    if (net.hostDown) olStatus.textContent = 'The host lost connection — waiting…';
+    else if (net.role === 'host') {
+      olStatus.textContent = ready >= net.count
+        ? 'Everyone is in — start the game!'
+        : 'Share the code — waiting for friends (' + ready + '/' + net.count + ')…';
+    } else {
+      olStatus.textContent = net.started ? 'Starting…' : 'Waiting for the host to start the game…';
+    }
+  }
+}
+function olCopy () {
+  const url = olShareUrl();
+  const done = () => {
+    if (!olCopyBtn) return;
+    const old = olCopyBtn.textContent;
+    olCopyBtn.textContent = 'Copied!';
+    setTimeout(() => { olCopyBtn.textContent = old; }, 1400);
+  };
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, done);
+    } else done();
+  } catch (e) { done(); }
+}
+function olStartGame () {
+  if (net.role !== 'host' || !net.on) return;
+  const seats = net.seats.slice().sort((a, b) => a.seat - b.seat);
+  if (seats.length < net.count || seats.some(s => !s.connected)) {
+    olErr('Waiting for everyone to join.');
+    return;
+  }
+  olErr('');
+  chosenCount = net.count;
+  if (countSeg) Array.prototype.forEach.call(countSeg.children,
+    b => b.classList.toggle('active', !!(b && b.dataset && +b.dataset.n === net.count)));
+  buildNameFields(net.count);
+  seats.forEach(s => {
+    const inp = nameFields.querySelector('input[data-p="' + s.p + '"]');
+    if (inp) inp.value = s.name;
+  });
+  net.started = true;                 // snapshots start flowing right away
+  netSend({ t: 'start' });
+  olCloseScreen();
+  winScreen.classList.add('hidden');
+  startGame();
+}
+
+/* ---------- wiring ---------- */
+if (onlineBtn) onlineBtn.addEventListener('click', olOpen);
+if (olCloseEl) olCloseEl.addEventListener('click', () => { olCloseScreen(); olErr(''); });
+if (olScreen) olScreen.addEventListener('click', e => { if (e.target === olScreen) olCloseScreen(); });
+if (olStartBtn) olStartBtn.addEventListener('click', olStartGame);
+if (olLeaveBtn) olLeaveBtn.addEventListener('click', olLeave);
+if (olCopyBtn) olCopyBtn.addEventListener('click', olCopy);
+
+if (olTabs) olTabs.addEventListener('click', e => {
+  const b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if (!b || !b.dataset || !b.dataset.tab) return;
+  olSwitchTab(b.dataset.tab);
+});
+if (olCountSeg) olCountSeg.addEventListener('click', e => {
+  const b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if (!b || !b.dataset || !b.dataset.n) return;
+  olCountN = +b.dataset.n;
+  Array.prototype.forEach.call(olCountSeg.children, x => x.classList.toggle('active', x === b));
+});
+if (olCreateBtn) olCreateBtn.addEventListener('click', () => {
+  const name = ((olNameIn && olNameIn.value) || '').trim().slice(0, 16) || 'Host';
+  olRememberName(name);
+  olConnect({ role: 'host', code: olRand(6), name: name, count: olCountN });
+  if (olStatus) olStatus.textContent = 'Creating room…';
+});
+if (olJoinBtn) olJoinBtn.addEventListener('click', () => {
+  const code = String((olCodeIn && olCodeIn.value) || '').toUpperCase()
+    .replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (code.length < 4) { olErr('Enter the room code your friend shared.'); return; }
+  const name = ((olJoinIn && olJoinIn.value) || '').trim().slice(0, 16) || 'Player';
+  olRememberName(name);
+  olConnect({ role: 'join', code: code, name: name, count: 2 });
+  if (olStatus) olStatus.textContent = 'Joining…';
+});
+if (olCodeIn) olCodeIn.addEventListener('input', () => {
+  olCodeIn.value = String(olCodeIn.value || '').toUpperCase()
+    .replace(/[^A-Z0-9]/g, '').slice(0, 6);
+});
+
+/* ?room=CODE opens the join form; a saved room rejoins after a reload */
+(function olBoot () {
+  if (typeof location === 'undefined') return;
+  let room = null;
+  try { room = new URLSearchParams(location.search).get('room'); } catch (e) {}
+  if (room) {
+    olSwitchTab('join');
+    if (olCodeIn) olCodeIn.value = String(room).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    olOpen();
+    return;
+  }
+  let saved = null;
+  try { saved = JSON.parse(window.localStorage.getItem(OL_KEY) || 'null'); } catch (e) {}
+  if (saved && saved.code && saved.token) {
+    olConnect({
+      role: saved.role === 'host' ? 'host' : 'join',
+      code: saved.code,
+      token: saved.token,
+      name: saved.name || 'Player',
+      count: saved.count || 2
+    });
+  }
+})();
 
 /* ---------- Init ---------- */
 soundOn = prefs.sound !== false;

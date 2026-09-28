@@ -1329,6 +1329,106 @@ body::before {
 .rename-modal .name-row { margin-bottom: 14px; }
 .rename-modal .tip { margin-bottom: 14px !important; }
 
+/* ============ Online rooms (join from another phone with a code) ============ */
+.online-modal { width: min(440px, 94vw); }
+.ol-pane { display: flex; flex-direction: column; gap: 10px; }
+.ol-pane .modal-actions { margin-top: 6px; }
+.ol-count { margin-bottom: 0; }
+.ol-label {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  margin: 2px 0 -4px;
+}
+.ol-name .chip { background: var(--accent); }
+.ol-code input {
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: .32em;
+  text-indent: .32em;
+  text-transform: uppercase;
+}
+.ol-codebox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(47, 111, 237, .13), rgba(47, 111, 237, .05));
+  border: 1.5px dashed rgba(47, 111, 237, .45);
+  border-radius: 14px;
+  padding: 12px 8px;
+  margin-bottom: 10px;
+}
+.ol-codebox b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(26px, 8.5vw, 38px);
+  letter-spacing: .26em;
+  text-indent: .26em;
+  color: var(--ink);
+  user-select: all;
+  -webkit-user-select: all;
+}
+.ol-link { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.ol-link code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  text-align: left;
+  background: var(--panel-soft, #f5f7fb);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--muted);
+}
+.ol-link .ghost-btn { flex: 0 0 auto; min-height: 44px; padding: 8px 13px; font-size: 13.5px; }
+.ol-seats { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.ol-seat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 7px 11px;
+  background: var(--panel-soft, #f5f7fb);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+.ol-seat .chip {
+  width: 15px; height: 15px; border-radius: 50%;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .3);
+  flex: 0 0 auto;
+}
+.ol-seat b {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ol-you {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.ol-state { font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+.ol-state.wait { animation: olPulse 1.5s ease-in-out infinite; }
+@keyframes olPulse { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+.ol-status { font-size: 13px !important; color: var(--muted) !important; min-height: 17px; margin: 0 0 12px !important; }
+.ol-err { color: #c62828 !important; font-size: 13px !important; font-weight: 700; margin: 8px 0 0 !important; }
+.ol-err.hidden { display: none; }
+.online-modal .tip b { color: var(--ink); }
+.online-modal .tip { margin-bottom: 16px !important; }
+
 /* ============ Dark theme ============ */
 [data-theme="dark"] {
   --ink: #e9edf7;
@@ -1358,6 +1458,12 @@ html[data-theme="dark"] .overlay { background: rgba(3, 6, 12, .7); }
 html[data-theme="dark"] .seg { background: var(--seg); }
 html[data-theme="dark"] .seg button.active { background: var(--seg-active); color: var(--seg-active-ink); }
 html[data-theme="dark"] .name-row { background: var(--panel-soft); }
+html[data-theme="dark"] .ol-codebox {
+  background: linear-gradient(180deg, rgba(75, 138, 230, .18), rgba(75, 138, 230, .06));
+  border-color: rgba(75, 138, 230, .5);
+}
+html[data-theme="dark"] .ol-link code { background: rgba(0, 0, 0, .35); color: var(--muted); }
+html[data-theme="dark"] .ol-err { color: #ff9a9a !important; }
 html[data-theme="dark"] .message {
   background: rgba(14, 18, 27, .88);
   color: #eef1f8;

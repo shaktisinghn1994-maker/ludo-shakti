@@ -28,6 +28,7 @@
     <button id="chatBtn" class="icon-btn" title="Chat" aria-haspopup="true" aria-expanded="false">💬</button>
     <button id="rulesBtn" class="ghost-btn">Rules</button>
     <button id="settingsBtn" class="icon-btn" title="Settings" aria-haspopup="true" aria-expanded="false">⚙️</button>
+    <button id="onlineBtn" class="icon-btn" title="Play online with a friend" aria-haspopup="dialog">🌐</button>
     <button id="newGameBtn" class="ghost-btn">New Game</button>
 
     <div id="settingsPop" class="settings-pop hidden" role="dialog" aria-label="Settings">
@@ -187,6 +188,72 @@
       <button id="renameCancel" class="ghost-btn">Cancel</button>
       <button id="renameSave" class="primary-btn">Save names</button>
     </div>
+    <div class="sig">Designed &amp; built by <b>Shakti Singh</b></div>
+  </div>
+</div>
+
+<!-- ===== Online rooms (same match on two phones, joined by a code) ===== -->
+<div id="onlineScreen" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Play online">
+  <div class="modal online-modal">
+    <button id="olClose" class="modal-x" aria-label="Close">✕</button>
+
+    <div id="olMain">
+      <h2>Play online</h2>
+      <p class="tip">One of you hosts. Share the code and friends play the same match from their own phone.</p>
+
+      <div class="seg" id="olTabs">
+        <button data-tab="create" class="active">Create room</button>
+        <button data-tab="join">Join a room</button>
+      </div>
+
+      <div id="olCreate" class="ol-pane">
+        <div class="name-row ol-name">
+          <span class="chip" id="olHostDot"></span>
+          <input id="olHostName" type="text" maxlength="16" placeholder="Your name" aria-label="Your name" />
+        </div>
+        <div class="ol-label">Players in the room</div>
+        <div class="seg ol-count" id="olCount">
+          <button data-n="2" class="active">2</button>
+          <button data-n="3">3</button>
+          <button data-n="4">4</button>
+        </div>
+        <div class="modal-actions">
+          <button id="olCreateBtn" class="primary-btn">Create room</button>
+        </div>
+      </div>
+
+      <div id="olJoin" class="ol-pane hidden">
+        <div class="name-row ol-code">
+          <input id="olCode" type="text" maxlength="6" placeholder="ROOM CODE" aria-label="Room code"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        </div>
+        <div class="name-row ol-name">
+          <span class="chip" id="olJoinDot"></span>
+          <input id="olJoinName" type="text" maxlength="16" placeholder="Your name" aria-label="Your name" />
+        </div>
+        <div class="modal-actions">
+          <button id="olJoinBtn" class="primary-btn">Join room</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="olLobby" class="hidden">
+      <h2>Room code</h2>
+      <div class="ol-codebox"><b id="olCodeOut">······</b></div>
+      <p class="tip" id="olLobbyTip">Friends open 🌐 → <b>Join a room</b> and type this code.</p>
+      <div class="ol-link">
+        <code id="olLinkOut"></code>
+        <button id="olCopyBtn" class="ghost-btn" type="button">Copy link</button>
+      </div>
+      <ul id="olSeatList" class="ol-seats"></ul>
+      <p id="olStatus" class="ol-status">Waiting for players…</p>
+      <div class="modal-actions">
+        <button id="olStartBtn" class="primary-btn">Start game</button>
+        <button id="olLeaveBtn" class="ghost-btn">Leave room</button>
+      </div>
+    </div>
+
+    <p id="olErr" class="ol-err hidden" role="alert"></p>
     <div class="sig">Designed &amp; built by <b>Shakti Singh</b></div>
   </div>
 </div>
